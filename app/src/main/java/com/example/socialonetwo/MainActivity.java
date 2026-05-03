@@ -31,6 +31,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.Gravity;
 import android.view.animation.AnimationUtils;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
@@ -50,9 +51,11 @@ import android.webkit.WebViewClient;
 import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -272,7 +275,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
             boolean isKeyboardVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
             dragHandle.setEnabled(!isKeyboardVisible);
-            dragHandle.setAlpha(isKeyboardVisible ? 0.5f : 1.0f);
+            
+            // Note: handle opacity is also managed by updateDragHandleState() based on panel visibility.
+            // We call it here to ensure it accounts for the keyboard state as well.
+            updateDragHandleState();
 
             // Auto-close tab switcher if keyboard pops up to avoid glitches
             if (isKeyboardVisible && tabSwitcherPanel != null && tabSwitcherPanel.getVisibility() == View.VISIBLE) {
@@ -339,6 +345,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
         Button btnViewHistory = findViewById(R.id.btnViewHistory);
         Button btnViewDownloads = findViewById(R.id.btnViewDownloads);
+        Button btnFindOnPage = findViewById(R.id.btnFindOnPage);
+        Button btnShareQR = findViewById(R.id.btnShareQR);
         Button btnOpenBusinessDashboard = findViewById(R.id.btnOpenBusinessDashboard);
         Button btnSettings = findViewById(R.id.btnSettings);
         Button btnAuthAction = findViewById(R.id.btnAuthAction);
@@ -353,6 +361,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         setClickAnimation(btnDoGlobalSearch);
         setClickAnimation(btnViewHistory);
         setClickAnimation(btnViewDownloads);
+        setClickAnimation(btnFindOnPage);
+        setClickAnimation(btnShareQR);
         setClickAnimation(btnSettings);
         setClickAnimation(btnAuthAction);
         setClickAnimation(btnOpenBusinessDashboard);
@@ -544,9 +554,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             if (controlsPanel.getVisibility() == View.VISIBLE || tabSwitcherPanel.getVisibility() == View.VISIBLE) {
                 controlsPanel.setVisibility(View.GONE);
                 tabSwitcherPanel.setVisibility(View.GONE);
+                updateDragHandleState();
             } else {
                 hideAllPanelsInternal();
                 controlsPanel.setVisibility(View.VISIBLE);
+                updateDragHandleState();
             }
         });
 
@@ -558,6 +570,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 tabSwitcherPanel.setVisibility(View.GONE);
                 boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
                 if (advancedAnim && handleTouchArea != null) handleTouchArea.setVisibility(View.VISIBLE);
+                updateDragHandleState();
             } else {
                 updateCurrentTabPreview();
                 updateTabSwitcherHeight(); // Dynamically fit screen
@@ -577,6 +590,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 tabSwitcherAdapter.setIncognitoTabs(incognitoTabs);
                 tabSwitcherAdapter.setSelectedPosition(currentPosition);
                 tabSwitcherAdapter.notifyDataSetChanged();
+                updateDragHandleState();
             }
         });
 
@@ -618,9 +632,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             
             if (searchPanel.getVisibility() == View.VISIBLE) {
                 searchPanel.setVisibility(View.GONE);
+                updateDragHandleState();
             } else {
                 hideAllPanelsInternal();
                 searchPanel.setVisibility(View.VISIBLE);
+                updateDragHandleState();
             }
         });
 
@@ -629,9 +645,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             
             if (moreOptionsPanel.getVisibility() == View.VISIBLE) {
                 moreOptionsPanel.setVisibility(View.GONE);
+                updateDragHandleState();
             } else {
                 hideAllPanelsInternal();
                 moreOptionsPanel.setVisibility(View.VISIBLE);
+                updateDragHandleState();
             }
         });
 
@@ -654,6 +672,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
         btnViewHistory.setOnClickListener(v -> showHistoryDialog());
         btnViewDownloads.setOnClickListener(v -> showDownloadsDialog());
+        btnFindOnPage.setOnClickListener(v -> showFindOnPageDialog());
+        btnShareQR.setOnClickListener(v -> showQRCodeDialog());
 
         btnAuthAction.setOnClickListener(v -> {
             FirebaseUser activeUser = FirebaseAuth.getInstance().getCurrentUser();
@@ -752,6 +772,15 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             public boolean onTouch(View v, MotionEvent event) {
                 if (!sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false)) return false;
                 if (!v.isEnabled()) return false;
+
+                // Disable handle interaction if any panel is open
+                if (controlsPanel.getVisibility() == View.VISIBLE ||
+                        searchPanel.getVisibility() == View.VISIBLE ||
+                        moreOptionsPanel.getVisibility() == View.VISIBLE ||
+                        tabSwitcherPanel.getVisibility() == View.VISIBLE) {
+                    return false;
+                }
+
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
                         hideKeyboard();
@@ -802,12 +831,14 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 if (tabSwitcherPanel.getVisibility() == View.VISIBLE) {
                     beginPanelTransition();
                     tabSwitcherPanel.setVisibility(View.GONE);
+                    updateDragHandleState();
                 } else if (searchPanel.getVisibility() == View.VISIBLE ||
                     moreOptionsPanel.getVisibility() == View.VISIBLE || 
                     controlsPanel.getVisibility() == View.VISIBLE) {
                     
                     beginPanelTransition();
                     hideAllPanelsInternal();
+                    updateDragHandleState();
                 } else if (customView != null) {
                     hideCustomView();
                 } else {
@@ -854,6 +885,45 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     }
 
     /**
+     * Updates the drag handle's appearance and enabled state based on keyboard and panel visibility.
+     */
+    private void updateDragHandleState() {
+        if (dragHandle == null) return;
+        
+        boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
+        if (!advancedAnim) {
+            dragHandle.setEnabled(false);
+            dragHandle.setAlpha(0.0f);
+            return;
+        }
+
+        boolean isPanelOpen = controlsPanel.getVisibility() == View.VISIBLE ||
+                searchPanel.getVisibility() == View.VISIBLE ||
+                moreOptionsPanel.getVisibility() == View.VISIBLE ||
+                tabSwitcherPanel.getVisibility() == View.VISIBLE;
+
+        // Check if keyboard is visible
+        boolean isKeyboardVisible = false;
+        View mainView = findViewById(R.id.main);
+        if (mainView != null) {
+            WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(mainView);
+            if (insets != null) {
+                isKeyboardVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
+            }
+        }
+        
+        float targetAlpha = (isPanelOpen || isKeyboardVisible) ? 0.5f : 1.0f;
+        
+        // Animate the alpha change for a smoother transition and more reliable visual update
+        if (dragHandle.getAlpha() != targetAlpha) {
+            dragHandle.animate()
+                    .alpha(targetAlpha)
+                    .setDuration(ANIM_DURATION)
+                    .start();
+        }
+    }
+
+    /**
      * Animates transitions for UI panels in the bottom container.
      */
     private void beginPanelTransition() {
@@ -861,6 +931,13 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         AutoTransition transition = new AutoTransition();
         transition.setDuration(ANIM_DURATION);
         TransitionManager.beginDelayedTransition(bottomUiContainer, transition);
+        
+        // Update immediately to reflect intended state change
+        updateDragHandleState();
+        
+        // Update again after a short delay to catch the actual keyboard state change
+        mainHandler.postDelayed(this::updateDragHandleState, 150);
+        mainHandler.postDelayed(this::updateDragHandleState, 400);
     }
 
     private void hideKeyboard() {
@@ -887,6 +964,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         
         boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
         if (advancedAnim && handleTouchArea != null) handleTouchArea.setVisibility(View.VISIBLE);
+        
+        updateDragHandleState();
     }
 
     /**
@@ -955,6 +1034,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
     @Override
     public void onTabClose(int position) {
+        if (siteList.size() <= 1) {
+            Toast.makeText(this, "Cannot close the only open tab", Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (position >= 0 && position < siteList.size()) {
             final String removedUrl = siteList.get(position);
 
@@ -995,6 +1078,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             
             sitesAdapter.notifyItemRemoved(position);
             tabSwitcherAdapter.notifyItemRemoved(position);
+
+            // Notify adapters that the item count has changed to update close button visibility
+            if (siteList.size() == 1) {
+                tabSwitcherAdapter.notifyItemChanged(0);
+            }
             
             // Update search sites adapter if needed
             searchSitesAdapter.updateFilteredList();
@@ -1088,6 +1176,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         
         sitesAdapter.notifyItemInserted(insertPos);
         tabSwitcherAdapter.notifyItemInserted(insertPos);
+
+        // If we just went from 1 to 2 tabs, refresh the first tab to show its close button
+        if (siteList.size() == 2) {
+            tabSwitcherAdapter.notifyItemChanged(0);
+        }
         
         searchSitesAdapter.updateFilteredList();
         
@@ -1198,6 +1291,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             urlInput.setText("");
             beginPanelTransition();
             controlsPanel.setVisibility(View.GONE);
+            updateDragHandleState();
         }
     }
 
@@ -1405,6 +1499,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             performGlobalSearch(query, selected);
             beginPanelTransition();
             searchPanel.setVisibility(View.GONE);
+            updateDragHandleState();
             confirmDialog.dismiss();
         });
 
@@ -1494,6 +1589,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         RecyclerView rv = dialogView.findViewById(R.id.historyRecyclerView);
         Button clearAll = dialogView.findViewById(R.id.btnClearAllHistory);
         ImageButton closeBtn = dialogView.findViewById(R.id.btnCloseHistory);
+        TextView tvEmpty = dialogView.findViewById(R.id.tvEmptyMessage);
+        
+        tvEmpty.setText(R.string.history_empty);
+        tvEmpty.setVisibility(historyList.isEmpty() ? View.VISIBLE : View.GONE);
+        rv.setVisibility(historyList.isEmpty() ? View.GONE : View.VISIBLE);
         
         setClickAnimation(clearAll);
         setClickAnimation(closeBtn);
@@ -1549,6 +1649,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         if (historyDialog != null) historyDialog.dismiss();
         beginPanelTransition();
         moreOptionsPanel.setVisibility(View.GONE);
+        updateDragHandleState();
     }
 
     @Override
@@ -1560,6 +1661,16 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                     historyList.remove(position);
                     saveHistory();
                     if (historyAdapter != null) historyAdapter.notifyItemRemoved(position);
+                    
+                    if (historyDialog != null && historyDialog.isShowing()) {
+                        TextView tvEmpty = historyDialog.findViewById(R.id.tvEmptyMessage);
+                        RecyclerView rv = historyDialog.findViewById(R.id.historyRecyclerView);
+                        if (tvEmpty != null && rv != null) {
+                            tvEmpty.setVisibility(historyList.isEmpty() ? View.VISIBLE : View.GONE);
+                            rv.setVisibility(historyList.isEmpty() ? View.GONE : View.VISIBLE);
+                        }
+                    }
+
                     if (recentSitesAdapter != null) recentSitesAdapter.updateFilteredList();
                     updateRecentVisibility();
                 })
@@ -1578,10 +1689,12 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         RecyclerView rv = dialogView.findViewById(R.id.historyRecyclerView);
         Button clearAll = dialogView.findViewById(R.id.btnClearAllHistory);
         ImageButton closeBtn = dialogView.findViewById(R.id.btnCloseHistory);
+        TextView tvEmpty = dialogView.findViewById(R.id.tvEmptyMessage);
 
+        tvEmpty.setText(R.string.downloads_empty);
         setClickAnimation(closeBtn);
 
-        DownloadsAdapter adapter = new DownloadsAdapter();
+        DownloadsAdapter adapter = new DownloadsAdapter(tvEmpty, rv);
         rv.setLayoutManager(new LinearLayoutManager(this));
         rv.setAdapter(adapter);
 
@@ -1607,17 +1720,17 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             downloadsDialog.getWindow().setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT);
         }
 
-        startDownloadPolling(adapter);
+        startDownloadPolling(adapter, tvEmpty, rv);
     }
 
     /**
      * Starts polling the DownloadManager for active downloads.
      */
-    private void startDownloadPolling(DownloadsAdapter adapter) {
+    private void startDownloadPolling(DownloadsAdapter adapter, TextView tvEmpty, RecyclerView rv) {
         downloadUpdateRunnable = new Runnable() {
             @Override
             public void run() {
-                updateDownloadListFromManager(adapter);
+                updateDownloadListFromManager(adapter, tvEmpty, rv);
                 downloadUpdateHandler.postDelayed(this, 1000);
             }
         };
@@ -1637,7 +1750,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
      * Queries the DownloadManager and updates the UI with current download statuses.
      */
     @SuppressLint("Range")
-    private void updateDownloadListFromManager(DownloadsAdapter adapter) {
+    private void updateDownloadListFromManager(DownloadsAdapter adapter, TextView tvEmpty, RecyclerView rv) {
         DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
         DownloadManager.Query query = new DownloadManager.Query();
         Cursor cursor = dm.query(query);
@@ -1656,6 +1769,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             } while (cursor.moveToNext());
             cursor.close();
         }
+        
+        tvEmpty.setVisibility(items.isEmpty() ? View.VISIBLE : View.GONE);
+        rv.setVisibility(items.isEmpty() ? View.GONE : View.VISIBLE);
         
         adapter.setItems(items);
     }
@@ -2703,6 +2819,93 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         }
     }
 
+    private void showFindOnPageDialog() {
+        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_caution, null);
+        TextView title = dialogView.findViewById(R.id.confirmTitle);
+        TextView message = dialogView.findViewById(R.id.confirmMessage);
+        Button btnFind = dialogView.findViewById(R.id.btnProceedConfirm);
+        Button btnCancel = dialogView.findViewById(R.id.btnCancelConfirm);
+
+        title.setText(R.string.find_on_page);
+        message.setVisibility(View.GONE);
+        
+        LinearLayout container = dialogView.findViewById(R.id.dialogContainer);
+        EditText input = new EditText(this);
+        input.setHint(R.string.find_hint);
+        input.setSingleLine(true);
+        input.setTextColor(getResources().getColor(R.color.primary_text));
+        input.setHintTextColor(getResources().getColor(R.color.secondary_text));
+        
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(dpToPx(20), 0, dpToPx(20), dpToPx(20));
+        input.setLayoutParams(lp);
+        container.addView(input, 1);
+
+        btnFind.setText("Find");
+        setClickAnimation(btnFind);
+        setClickAnimation(btnCancel);
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder builder = new com.google.android.material.dialog.MaterialAlertDialogBuilder(this);
+        builder.setView(dialogView);
+        AlertDialog dialog = builder.create();
+        if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+
+        btnFind.setOnClickListener(v -> {
+            String query = input.getText().toString().trim();
+            if (!query.isEmpty()) {
+                View currentView = tabMap.get(currentUrl);
+                if (currentView instanceof WebView) {
+                    ((WebView) currentView).findAllAsync(query);
+                    dialog.dismiss();
+                    beginPanelTransition();
+                    moreOptionsPanel.setVisibility(View.GONE);
+                    updateDragHandleState();
+                }
+            }
+        });
+
+        btnCancel.setOnClickListener(v -> dialog.dismiss());
+        dialog.show();
+    }
+
+    private void showQRCodeDialog() {
+        if (currentUrl == null || currentUrl.startsWith("home://")) {
+            Toast.makeText(this, "Cannot share this page", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_caution, null);
+        TextView title = dialogView.findViewById(R.id.confirmTitle);
+        TextView message = dialogView.findViewById(R.id.confirmMessage);
+        Button btnClose = dialogView.findViewById(R.id.btnProceedConfirm);
+        Button btnCancel = dialogView.findViewById(R.id.btnCancelConfirm);
+
+        title.setText(R.string.qr_title);
+        message.setVisibility(View.GONE);
+        btnCancel.setVisibility(View.GONE);
+        btnClose.setText("Close");
+
+        LinearLayout container = dialogView.findViewById(R.id.dialogContainer);
+        ImageView qrView = new ImageView(this);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dpToPx(250), dpToPx(250));
+        lp.gravity = Gravity.CENTER;
+        lp.setMargins(0, dpToPx(20), 0, dpToPx(20));
+        qrView.setLayoutParams(lp);
+
+        String qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=" + Uri.encode(currentUrl);
+        com.bumptech.glide.Glide.with(this).load(qrUrl).into(qrView);
+        
+        container.addView(qrView, 1);
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder builder = new com.google.android.material.dialog.MaterialAlertDialogBuilder(this);
+        builder.setView(dialogView);
+        AlertDialog dialog = builder.create();
+        if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+
+        btnClose.setOnClickListener(v -> dialog.dismiss());
+        dialog.show();
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
@@ -2760,6 +2963,13 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
      */
     private class DownloadsAdapter extends RecyclerView.Adapter<DownloadsAdapter.ViewHolder> {
         private List<DownloadItem> items = new ArrayList<>();
+        private final TextView tvEmpty;
+        private final RecyclerView rv;
+
+        public DownloadsAdapter(TextView tvEmpty, RecyclerView rv) {
+            this.tvEmpty = tvEmpty;
+            this.rv = rv;
+        }
 
         @SuppressLint("NotifyDataSetChanged")
         public void setItems(List<DownloadItem> newItems) {
@@ -2831,7 +3041,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                             .setPositiveButton(R.string.delete, (dialog, which) -> {
                                 DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
                                 dm.remove(item.id);
-                                updateDownloadListFromManager(this);
+                                updateDownloadListFromManager(this, tvEmpty, rv);
                             })
                             .setNegativeButton(R.string.cancel, null)
                             .show();

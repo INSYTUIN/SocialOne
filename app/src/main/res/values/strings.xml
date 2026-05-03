@@ -36,6 +36,8 @@
     <string name="delete_all_tabs_confirm">Delete all tabs?</string>
     <string name="view_downloads">View Downloads</string>
     <string name="downloads_title">Downloads</string>
+    <string name="history_empty">No browsing history found</string>
+    <string name="downloads_empty">No downloads found</string>
     <string name="max_locked_limit">Max locked sites reached (3)</string>
     <string name="max_sites_limit">Select up to 5 sites</string>
     <string name="more_options">More Options</string>
@@ -94,4 +96,9 @@
     <string name="advance_animations_title">Advance Animations</string>
     <string name="advance_animations_desc">Enables the dynamic bottom bar. This feature may not work properly on older android devices.</string>
     <string name="restart_app_message">The app needs to restart to apply this change. Restart now?</string>
+    <string name="find_on_page">Find on Page</string>
+    <string name="share_qr">Share as QR Code</string>
+    <string name="find_hint">Search text on page...</string>
+    <string name="no_results">No results found</string>
+    <string name="qr_title">Scan QR Code</string>
 </resources>

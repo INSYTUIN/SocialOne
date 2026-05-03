@@ -105,8 +105,8 @@ public class TabSwitcherAdapter extends RecyclerView.Adapter<TabSwitcherAdapter.
 
         holder.tvTitle.setText(displayName);
         
-        // Always show close button in this new version
-        holder.btnClose.setVisibility(View.VISIBLE);
+        // Only show close button if there is more than one tab open
+        holder.btnClose.setVisibility(siteList.size() > 1 ? View.VISIBLE : View.GONE);
         
         // Show incognito icon if tab is incognito
         holder.incognitoIcon.setVisibility(incognitoTabs.contains(url) ? View.VISIBLE : View.GONE);

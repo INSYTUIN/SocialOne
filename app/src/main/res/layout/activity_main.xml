@@ -803,7 +803,7 @@
                     android:visibility="gone"
                     app:cardCornerRadius="16dp"
                     app:cardElevation="8dp"
-                    tools:visibility="gone">
+                    tools:visibility="visible">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -848,6 +848,26 @@
                             android:layout_marginBottom="8dp"
                             android:backgroundTint="@color/button_background"
                             android:text="@string/view_downloads"
+                            android:textColor="@color/button_text"
+                            app:cornerRadius="8dp" />
+
+                        <Button
+                            android:id="@+id/btnFindOnPage"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginBottom="8dp"
+                            android:backgroundTint="@color/button_background"
+                            android:text="@string/find_on_page"
+                            android:textColor="@color/button_text"
+                            app:cornerRadius="8dp" />
+
+                        <Button
+                            android:id="@+id/btnShareQR"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginBottom="8dp"
+                            android:backgroundTint="@color/button_background"
+                            android:text="@string/share_qr"
                             android:textColor="@color/button_text"
                             app:cornerRadius="8dp" />
 
