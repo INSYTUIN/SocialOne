@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "477274295004",
+    "project_id": "socialone-ac7dd",
+    "storage_bucket": "socialone-ac7dd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:477274295004:android:d3f8853fe12159832f4219",
+        "android_client_info": {
+          "package_name": "com.example.socialonetwo"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "477274295004-22uoo6o2oqqc3bn1fnu3km1ve7gmql1q.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.socialonetwo",
+            "certificate_hash": "20d923245009eb38add28829ab95b13a7007494c"
+          }
+        },
+        {
+          "client_id": "477274295004-j5k8bt98o7h7qrs0o4efi94rt8thnrc9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD48Q_jwBdSOl7TZdIUnogmqsmblzMlpMo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "477274295004-j5k8bt98o7h7qrs0o4efi94rt8thnrc9.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

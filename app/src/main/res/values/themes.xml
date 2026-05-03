@@ -1,0 +1,28 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Base.Theme.SocialOneTwo" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Customize your light theme here. -->
+        <item name="materialAlertDialogTheme">@style/CustomAlertDialogTheme</item>
+    </style>
+
+    <style name="Theme.SocialOneTwo" parent="Base.Theme.SocialOneTwo" />
+
+    <style name="CustomAlertDialogTheme" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="dialogCornerRadius">24dp</item>
+        <item name="backgroundTint">@color/panel_background</item>
+        <item name="shapeAppearanceOverlay">@style/RoundedDialogCorners</item>
+        <item name="android:textColorPrimary">@color/primary_text</item>
+    </style>
+
+    <style name="RoundedDialogCorners" parent="ShapeAppearance.Material3.MediumComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">24dp</item>
+    </style>
+
+    <style name="PopupMenuTheme" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:popupBackground">@drawable/bg_popup_rounded</item>
+        <item name="android:textColorPrimary">@color/primary_text</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+</resources>

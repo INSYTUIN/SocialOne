@@ -1,0 +1,97 @@
+<resources>
+    <string name="app_name">Social One</string>
+    <string name="add_website_hint">search or enter url</string>
+    <string name="add_button">Enter</string>
+    <string name="remove_button">Remove</string>
+    <string name="switch_button">Switch</string>
+    <string name="toggle_controls">Toggle Controls</string>
+    <string name="global_search_title">Global Search</string>
+    <string name="search_hint">search globally</string>
+    <string name="select_sites_label">Select sites to search:</string>
+    <string name="search_compile_button">Search &amp; Compile</string>
+    <string name="added_toast">Added: %1$s</string>
+    <string name="removed_toast">Removed: %1$s</string>
+    <string name="site_exists_toast">Site already exists</string>
+    <string name="search_term_empty">Enter a search term</string>
+    <string name="select_one_site">Select at least one site</string>
+    <string name="confirm_search_title">Confirm Search</string>
+    <string name="confirm_search_message">Open search results in all selected tabs?</string>
+    <string name="proceed">Proceed</string>
+    <string name="cancel">Cancel</string>
+
+    <!-- Browsing History and Recent Sites -->
+    <string name="view_history">View History</string>
+    <string name="clear_history">Clear History</string>
+    <string name="history_cleared">History cleared</string>
+    <string name="history_title">Browsing History</string>
+    <string name="search_predictions_toggle">Search Predictions</string>
+    <string name="delete_all_recent_title">Clear All Recent Sites?</string>
+    <string name="delete_all_recent_message">This will remove all recent websites and search results except the Home page.</string>
+    <string name="delete_all_confirm">Clear All</string>
+    <string name="business_dashboard">Quick Access Messages</string>
+    <string name="business_dashboard_desc">Track your messages and notifications across platforms.</string>
+    <string name="expand_tabs">Expand Tabs</string>
+    <string name="tab_switcher_title">Open Tabs</string>
+    <string name="close_tab">Close Tab</string>
+    <string name="delete_all_tabs_confirm">Delete all tabs?</string>
+    <string name="view_downloads">View Downloads</string>
+    <string name="downloads_title">Downloads</string>
+    <string name="max_locked_limit">Max locked sites reached (3)</string>
+    <string name="max_sites_limit">Select up to 5 sites</string>
+    <string name="more_options">More Options</string>
+    <string name="search_engine_label">Default Search Engine</string>
+
+    <!-- Bookmarks -->
+    <string name="bookmarks_title">Bookmarks</string>
+    <string name="recent_placeholder">recently visited sites will appear here</string>
+    <string name="bookmarks_placeholder">bookmarks will appear here</string>
+    <string name="bookmark_added">Bookmark added</string>
+    <string name="bookmark_removed">Remove bookmark</string>
+    <string name="option_bookmark">Bookmark Site</string>
+    <string name="option_lock">Lock Tab</string>
+    <string name="option_unlock">Unlock Tab</string>
+    <string name="option_delete_tab">Delete Tab</string>
+    <string name="option_copy_link">Copy Link</string>
+    <string name="site_options">Site Options</string>
+
+    <!-- Deletion -->
+    <string name="delete_site_title">Delete Site?</string>
+    <string name="delete_site_message">Remove %1$s from home screen?</string>
+    <string name="delete">Delete</string>
+
+    <!-- Dialog Strings -->
+    <string name="dialog_clear_history_title">Clear All History?</string>
+    <string name="dialog_clear_history_message">This will remove all history and clear browser data.</string>
+    <string name="dialog_clear_all">Clear All</string>
+    <string name="dialog_delete_history_title">Delete from History?</string>
+    <string name="dialog_image_options_title">Image Options</string>
+    <string name="option_download_image">Download Image</string>
+    <string name="option_share_image_url">Share Image URL</string>
+    <string name="option_add_to_post_creator">Add to Post Creator</string>
+    <string name="dialog_remove_download_title">Remove Download?</string>
+    <string name="dialog_remove_download_message">This will remove %1$s from your history.</string>
+    <string name="dialog_delete_file">Delete File</string>
+
+    <!-- Navigation -->
+    <string name="forward">Forward</string>
+
+    <!-- Logout -->
+    <string name="logout_title">Logout</string>
+    <string name="logout_message">Are you sure you want to logout? All local browsing data will be cleared.</string>
+    <string name="logout_confirm">Logout</string>
+
+    <!-- Incognito Mode -->
+    <string name="incognito_mode">Incognito Mode</string>
+    <string name="incognito_title">You\'ve gone incognito</string>
+    <string name="incognito_desc">Now you can browse privately, and other people who use this device won\'t see your activity. However, downloads, bookmarks and reading list items will be saved.</string>
+    <string name="incognito_not_saved_title">Social One won\'t save:</string>
+    <string name="incognito_not_saved_list">• Your browsing history\n• Cookies and site data\n• Information entered in forms</string>
+    <string name="incognito_footer">Use the websearch to start browsing privately.</string>
+    <string name="settings_title">Settings</string>
+    <string name="search_preferences_title">Search Preferences</string>
+    <string name="search_engine_desc">Choose the service used for web searches.</string>
+    <string name="search_predictions_desc">Show suggestions as you type in the search bar.</string>
+    <string name="advance_animations_title">Advance Animations</string>
+    <string name="advance_animations_desc">Enables the dynamic bottom bar. This feature may not work properly on older android devices.</string>
+    <string name="restart_app_message">The app needs to restart to apply this change. Restart now?</string>
+</resources>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="icon_tint">#FF000000</color>
+    <color name="button_background">#FF000000</color>
+    <color name="button_text">#FFFFFFFF</color>
+    <color name="panel_background">#FFFFFF</color>
+
+    <color name="home_background">#FFFFFF</color>
+    <color name="search_results_background">#F0F0F0</color>
+    <color name="primary_text">#000000</color>
+    <color name="secondary_text">#666666</color>
+
+    <color name="selected_tab_stroke">#FF000000</color>
+    <color name="selected_tab_glow">#4D000000</color>
+</resources>
