@@ -21,7 +21,7 @@ Advanced Animations: A toggleable "Dynamic Mode" featuring a floating bottom bar
 •
 Home Dashboard: Quick access to recently visited sites and personalized bookmarks.
 •
-Business Dashboard: Dedicated quick-access for professional messaging platforms like LinkedIn, Messenger, and Gmail.
+Quick Access Messages: Dedicated quick-access for professional messaging platforms like LinkedIn, Messenger, and Gmail.
 •
 Incognito Mode: Browse privately with a dedicated dark-themed UI. History and cookies are cleared automatically when the tab is closed.
 

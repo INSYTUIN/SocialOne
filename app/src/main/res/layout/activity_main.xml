@@ -35,8 +35,9 @@
                 android:layout_height="match_parent"
                 android:background="@color/home_background"
                 android:clipToPadding="false"
+                android:fillViewport="true"
                 android:padding="20dp"
-                android:paddingBottom="80dp"
+                android:paddingBottom="100dp"
                 android:visibility="gone"
                 tools:visibility="visible">
 
@@ -128,19 +129,19 @@
                         tools:listitem="@layout/item_recent" />
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnOpenBusinessDashboard"
+                        android:id="@+id/btnOpenQuickAccessMessages"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="24dp"
                         android:backgroundTint="@color/button_background"
                         android:padding="12dp"
-                        android:text="@string/business_dashboard"
+                        android:text="@string/quick_access_messages"
                         android:textAllCaps="false"
                         android:textColor="@color/button_text"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         app:cornerRadius="12dp"
-                        app:icon="@drawable/suitcase"
+                        app:icon="@drawable/message"
                         app:iconGravity="textStart"
                         app:iconPadding="12dp"
                         app:iconSize="24dp" />
@@ -158,15 +159,15 @@
             </androidx.core.widget.NestedScrollView>
 
             <androidx.core.widget.NestedScrollView
-                android:id="@+id/businessView"
+                android:id="@+id/quickAccessMessagesView"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:background="@color/home_background"
                 android:clipToPadding="false"
+                android:fillViewport="true"
                 android:padding="20dp"
-                android:paddingBottom="80dp"
-                android:visibility="gone"
-                tools:visibility="gone">
+                android:paddingBottom="100dp"
+                android:visibility="gone">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -178,7 +179,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="30dp"
-                        android:text="@string/business_dashboard"
+                        android:text="@string/quick_access_messages"
                         android:textColor="@color/button_background"
                         android:textSize="24sp"
                         android:textStyle="bold" />
@@ -187,7 +188,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="@string/business_dashboard_desc"
+                        android:text="@string/quick_access_messages_desc"
                         android:textColor="@color/secondary_text"
                         android:textSize="14sp" />
 
@@ -424,7 +425,8 @@
                 android:background="#202124"
                 android:padding="24dp"
                 android:clipToPadding="false"
-                android:paddingBottom="100dp"
+                android:fillViewport="true"
+                android:paddingBottom="120dp"
                 android:visibility="gone">
 
                 <LinearLayout
@@ -654,38 +656,38 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/global_search_title"
-                            android:textStyle="bold"
                             android:layout_marginBottom="8dp"
-                            android:textColor="@color/button_background"/>
+                            android:text="@string/global_search_title"
+                            android:textColor="@color/button_background"
+                            android:textStyle="bold" />
 
                         <AutoCompleteTextView
                             android:id="@+id/searchInput"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:hint="@string/search_hint"
-                            android:importantForAutofill="no"
-                            android:inputType="text"
-                            android:imeOptions="actionSearch"
+                            android:completionThreshold="1"
                             android:dropDownAnchor="@id/searchPanel"
                             android:dropDownHeight="200dp"
-                            android:completionThreshold="1" />
+                            android:hint="@string/search_hint"
+                            android:imeOptions="actionSearch"
+                            android:importantForAutofill="no"
+                            android:inputType="text" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/select_sites_label"
-                            android:textSize="12sp"
                             android:layout_marginTop="8dp"
-                            android:textColor="@color/button_background"/>
+                            android:text="@string/select_sites_label"
+                            android:textColor="@color/button_background"
+                            android:textSize="12sp" />
 
                         <androidx.recyclerview.widget.RecyclerView
                             android:id="@+id/searchSitesRecyclerView"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
                             android:orientation="horizontal"
-                            app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
-                            android:layout_marginTop="4dp" />
+                            app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
                         <Button
                             android:id="@+id/btnDoGlobalSearch"
@@ -707,7 +709,7 @@
                     android:visibility="gone"
                     app:cardCornerRadius="16dp"
                     app:cardElevation="8dp"
-                    tools:visibility="gone">
+                    tools:visibility="visible">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -722,6 +724,41 @@
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <AutoCompleteTextView
+                                android:id="@+id/urlInput"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:completionThreshold="1"
+                                android:dropDownAnchor="@id/controlsPanel"
+                                android:dropDownHeight="200dp"
+                                android:hint="@string/add_website_hint"
+                                android:imeOptions="actionDone"
+                                android:importantForAutofill="no"
+                                android:inputType="textUri" />
+
+                            <ImageButton
+                                android:id="@+id/btnNewTab"
+                                android:layout_width="40dp"
+                                android:layout_height="40dp"
+                                android:layout_marginStart="8dp"
+                                android:layout_marginEnd="6dp"
+                                android:background="?attr/selectableItemBackgroundBorderless"
+                                android:contentDescription="New Tab"
+                                android:padding="8dp"
+                                android:scaleType="fitCenter"
+                                android:src="@drawable/plus"
+                                app:tint="@color/icon_tint" />
+
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
                             android:gravity="center_vertical"
                             android:orientation="horizontal">
 
@@ -756,41 +793,6 @@
                                     android:textStyle="bold" />
                             </FrameLayout>
                         </LinearLayout>
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <AutoCompleteTextView
-                                android:id="@+id/urlInput"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:completionThreshold="1"
-                                android:dropDownAnchor="@id/controlsPanel"
-                                android:dropDownHeight="200dp"
-                                android:hint="@string/add_website_hint"
-                                android:imeOptions="actionDone"
-                                android:importantForAutofill="no"
-                                android:inputType="textUri" />
-
-                            <ImageButton
-                                android:id="@+id/btnNewTab"
-                                android:layout_width="40dp"
-                                android:layout_height="40dp"
-                                android:layout_marginStart="8dp"
-                                android:layout_marginEnd="6dp"
-                                android:background="?attr/selectableItemBackgroundBorderless"
-                                android:contentDescription="New Tab"
-                                android:padding="8dp"
-                                android:scaleType="fitCenter"
-                                android:src="@drawable/plus"
-                                app:tint="@color/icon_tint" />
-
-                        </LinearLayout>
                     </LinearLayout>
                 </androidx.cardview.widget.CardView>
 
@@ -802,8 +804,7 @@
                     android:layout_margin="12dp"
                     android:visibility="gone"
                     app:cardCornerRadius="16dp"
-                    app:cardElevation="8dp"
-                    tools:visibility="visible">
+                    app:cardElevation="8dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -909,7 +910,6 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:padding="12dp"
-                android:background="@color/panel_background"
                 android:gravity="center_vertical">
 
                 <com.google.android.material.floatingactionbutton.FloatingActionButton

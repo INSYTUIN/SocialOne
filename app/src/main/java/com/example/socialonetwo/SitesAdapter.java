@@ -129,8 +129,8 @@ public class SitesAdapter extends RecyclerView.Adapter<SitesAdapter.SiteViewHold
         String displayName;
         if (url.equals("home://dashboard")) {
             displayName = "Home";
-        } else if (url.equals("home://business")) {
-            displayName = "Business";
+        } else if (url.equals("home://quickaccess_messages")) {
+            displayName = "Messages";
         } else if (url.startsWith("Global Search: ")) {
             displayName = url; 
         } else {

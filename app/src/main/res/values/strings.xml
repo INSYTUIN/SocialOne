@@ -28,8 +28,8 @@
     <string name="delete_all_recent_title">Clear All Recent Sites?</string>
     <string name="delete_all_recent_message">This will remove all recent websites and search results except the Home page.</string>
     <string name="delete_all_confirm">Clear All</string>
-    <string name="business_dashboard">Quick Access Messages</string>
-    <string name="business_dashboard_desc">Track your messages and notifications across platforms.</string>
+    <string name="quick_access_messages">Quick Access Messages</string>
+    <string name="quick_access_messages_desc">Track your messages and notifications across platforms.</string>
     <string name="expand_tabs">Expand Tabs</string>
     <string name="tab_switcher_title">Open Tabs</string>
     <string name="close_tab">Close Tab</string>

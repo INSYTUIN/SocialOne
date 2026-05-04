@@ -5,7 +5,7 @@
     <color name="icon_tint">#FF000000</color>
     <color name="button_background">#FF000000</color>
     <color name="button_text">#FFFFFFFF</color>
-    <color name="panel_background">#FFFFFF</color>
+    <color name="panel_background">#E6FFFFFF</color>
 
     <color name="home_background">#FFFFFF</color>
     <color name="search_results_background">#F0F0F0</color>
