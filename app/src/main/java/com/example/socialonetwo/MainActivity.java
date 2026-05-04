@@ -274,6 +274,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             
             if (!advancedAnim && isHome) {
                 // Home tab in Normal Mode: Treat bottom bar as fixed boundary
+                // This keeps the dashboard perfectly between status and navigation bars
                 v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
                 bottomUiContainer.setPadding(0, 0, 0, Math.max(0, effectiveImeBottom - systemBars.bottom));
                 lp.addRule(RelativeLayout.ABOVE, R.id.bottomUiContainer);
@@ -285,6 +286,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 if (incognitoHomeView != null) incognitoHomeView.setPadding(dpToPx(24), dpToPx(24), dpToPx(24), dpToPx(24));
             } else {
                 // Other tabs or Advanced Mode: Immersive edge-to-edge drawing
+                // This allows content to draw behind the floating/semi-transparent panels
                 v.setPadding(systemBars.left, systemBars.top, systemBars.right, 0);
                 bottomUiContainer.setPadding(0, 0, 0, bottomPadding);
                 lp.removeRule(RelativeLayout.ABOVE);
@@ -292,9 +294,13 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 int barHeight = dpToPx(80);
                 int extraContentPadding = bottomPadding + barHeight;
 
-                // For WebViews in Advanced mode, we use 0 padding for a truly immersive experience
-                // Dashboards still use padding to clear the floating buttons
-                if (webViewContainer != null) webViewContainer.setPadding(0, 0, 0, 0);
+                if (webViewContainer != null) {
+                    // Normal Mode + Website: Use padding to clear the fixed bar while staying immersive
+                    // Advanced Mode: Use 0 padding for the truly floating experience
+                    int webPadding = (!advancedAnim) ? extraContentPadding : 0;
+                    webViewContainer.setPadding(0, 0, 0, webPadding);
+                }
+
                 if (homeView != null) homeView.setPadding(dpToPx(20), dpToPx(20), dpToPx(20), extraContentPadding);
                 if (quickAccessMessagesView != null) quickAccessMessagesView.setPadding(dpToPx(20), dpToPx(20), dpToPx(20), extraContentPadding);
                 if (incognitoHomeView != null) incognitoHomeView.setPadding(dpToPx(24), dpToPx(24), dpToPx(24), extraContentPadding);
