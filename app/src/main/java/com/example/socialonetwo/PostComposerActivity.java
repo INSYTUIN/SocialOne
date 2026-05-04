@@ -132,11 +132,48 @@ public class PostComposerActivity extends AppCompatActivity {
 
     private void handleIncomingIntent() {
         Intent intent = getIntent();
-        if (intent != null && intent.hasExtra("image_url")) {
+        if (intent == null) return;
+        
+        String action = intent.getAction();
+        String type = intent.getType();
+
+        // Handle text or explicit image_url
+        if (intent.hasExtra("image_url")) {
             String imageUrl = intent.getStringExtra("image_url");
             if (imageUrl != null) {
                 selectedMediaUris.add(Uri.parse(imageUrl));
                 mediaAdapter.notifyDataSetChanged();
+            }
+        }
+
+        if (Intent.ACTION_SEND.equals(action) && type != null) {
+            if ("text/plain".equals(type)) {
+                String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
+                if (sharedText != null) {
+                    etPostContent.setText(sharedText);
+                }
+            } else if (type.startsWith("image/") || type.startsWith("video/")) {
+                Uri sharedUri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+                if (sharedUri != null) {
+                    selectedMediaUris.add(sharedUri);
+                    mediaAdapter.notifyDataSetChanged();
+                }
+                String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
+                if (sharedText != null && etPostContent.length() == 0) {
+                    etPostContent.setText(sharedText);
+                }
+            }
+        } else if (Intent.ACTION_SEND_MULTIPLE.equals(action) && type != null) {
+            if (type.startsWith("image/") || type.startsWith("video/")) {
+                ArrayList<Uri> sharedUris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+                if (sharedUris != null) {
+                    selectedMediaUris.addAll(sharedUris);
+                    mediaAdapter.notifyDataSetChanged();
+                }
+                String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
+                if (sharedText != null && etPostContent.length() == 0) {
+                    etPostContent.setText(sharedText);
+                }
             }
         }
     }

@@ -708,8 +708,7 @@
                     android:layout_margin="12dp"
                     android:visibility="gone"
                     app:cardCornerRadius="16dp"
-                    app:cardElevation="8dp"
-                    tools:visibility="visible">
+                    app:cardElevation="8dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -804,7 +803,8 @@
                     android:layout_margin="12dp"
                     android:visibility="gone"
                     app:cardCornerRadius="16dp"
-                    app:cardElevation="8dp">
+                    app:cardElevation="8dp"
+                    tools:visibility="visible">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -873,6 +873,16 @@
                             app:cornerRadius="8dp" />
 
                         <Button
+                            android:id="@+id/btnGrabMedia"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginBottom="8dp"
+                            android:backgroundTint="@color/button_background"
+                            android:text="Grab Media from Page"
+                            android:textColor="@color/button_text"
+                            app:cornerRadius="8dp" />
+
+                        <Button
                             android:id="@+id/btnSettings"
                             android:layout_width="match_parent"
                             android:layout_height="48dp"
@@ -917,7 +927,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:contentDescription="Global Search"
-                    android:src="@drawable/search"
+                    android:src="@drawable/websearch"
                     app:backgroundTint="@color/button_background"
                     app:fabSize="mini"
                     app:tint="@color/button_text" />
@@ -969,7 +979,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:contentDescription="@string/toggle_controls"
-                    android:src="@drawable/websearch"
+                    android:src="@drawable/search"
                     app:backgroundTint="@color/button_background"
                     app:fabSize="mini"
                     app:tint="@color/button_text" />

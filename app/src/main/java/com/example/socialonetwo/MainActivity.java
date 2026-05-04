@@ -156,6 +156,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
     // UI Panels and interactive elements
     private CardView controlsPanel, searchPanel, moreOptionsPanel, tabSwitcherPanel;
+    private Button btnGrabMedia;
     private View btnExpandTabs, handleTouchArea;
     private SwipeRefreshLayout swipeRefreshLayout;
     private MaterialSwitch switchDesktopSite;
@@ -189,6 +190,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private AlertDialog downloadsDialog;
     private FirestoreManager firestoreManager;
     private final ExecutorService executorService = Executors.newSingleThreadExecutor();
+    private final Set<String> detectedMediaUrls = new HashSet<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Handler downloadUpdateHandler = new Handler(Looper.getMainLooper());
     private Runnable downloadUpdateRunnable;
@@ -370,6 +372,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         RecyclerView recentRecyclerView = findViewById(R.id.recentRecyclerView);
         RecyclerView bookmarksRecyclerView = findViewById(R.id.bookmarksRecyclerView);
         tabSwitcherRecyclerView = findViewById(R.id.tabSwitcherRecyclerView);
+        btnGrabMedia = findViewById(R.id.btnGrabMedia);
         recentTitle = findViewById(R.id.recentTitle);
         bookmarksTitle = findViewById(R.id.bookmarksTitle);
         tvUserStatus = findViewById(R.id.tvUserStatus);
@@ -398,6 +401,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         setClickAnimation(btnAuthAction);
         setClickAnimation(btnOpenQuickAccessMessages);
         setClickAnimation(btnExpandTabs);
+        setClickAnimation(btnGrabMedia);
         setClickAnimation(btnDeleteAllTabs);
         setClickAnimation(btnIncognito);
         setClickAnimation(btnNewTab);
@@ -866,6 +870,60 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                         return true;
                 }
                 return false;
+            }
+        });
+
+        btnGrabMedia.setOnClickListener(v -> {
+            View currentView = tabMap.get(currentUrl);
+            if (currentView instanceof WebView) {
+                ((WebView) currentView).evaluateJavascript(
+                        "(function() { " +
+                                "  var media = [];" +
+                                "  var imgs = document.getElementsByTagName('img');" +
+                                "  for (var i = 0; i < imgs.length; i++) {" +
+                                "    if (imgs[i].src && imgs[i].src.startsWith('http') && (imgs[i].naturalWidth > 50 || imgs[i].width > 50 || imgs[i].naturalWidth === undefined)) {" +
+                                "      media.push(imgs[i].src);" +
+                                "    }" +
+                                "  }" +
+                                "  var vids = document.getElementsByTagName('video');" +
+                                "  for (var i = 0; i < vids.length; i++) {" +
+                                "    if (vids[i].src) media.push(vids[i].src);" +
+                                "    var sources = vids[i].getElementsByTagName('source');" +
+                                "    for (var j = 0; j < sources.length; j++) {" +
+                                "      if (sources[j].src) media.push(sources[j].src);" +
+                                "    }" +
+                                "  }" +
+                                "  return JSON.stringify(media);" +
+                                "})();",
+                        value -> {
+                            detectedMediaUrls.clear();
+                            if (value != null && !value.equals("null") && !value.isEmpty() && !value.equals("\"[]\"")) {
+                                try {
+                                    String jsonStr = value;
+                                    if (jsonStr.startsWith("\"") && jsonStr.endsWith("\"")) {
+                                        jsonStr = jsonStr.substring(1, jsonStr.length() - 1);
+                                        jsonStr = jsonStr.replace("\\\"", "\"").replace("\\\\", "\\");
+                                    }
+                                    JSONArray array = new JSONArray(jsonStr);
+                                    for (int i = 0; i < array.length(); i++) {
+                                        String mediaUrl = array.getString(i);
+                                        if (!detectedMediaUrls.contains(mediaUrl)) {
+                                            detectedMediaUrls.add(mediaUrl);
+                                        }
+                                    }
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
+                            }
+                            
+                            beginPanelTransition();
+                            hideAllPanelsInternal();
+                            
+                            showMediaGrabberDialog();
+                        }
+                );
+            } else {
+                Toast.makeText(this, "No active web page", Toast.LENGTH_SHORT).show();
             }
         });
 
@@ -2373,6 +2431,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 super.onPageStarted(view, url, favicon);
                 if (currentUrl != null && tabMap.get(currentUrl) == view) {
                     progressBar.setVisibility(View.VISIBLE);
+                    // Clear media list when starting a new page
+                    detectedMediaUrls.clear();
                 }
                 
                 // Add a timeout logic to handle stuck tabs
@@ -2409,6 +2469,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                     progressBar.setVisibility(View.GONE);
                     swipeRefreshLayout.setRefreshing(false);
                 }
+                
+                // We now scan for media dynamically when the user clicks the Grab Media button
                 
                 String oldUrl = null;
                 int tabIndex = -1;
@@ -2534,6 +2596,18 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 }
             });
         }
+
+        @JavascriptInterface
+        public void onMediaFound(String url) {
+            MainActivity activity = activityRef.get();
+            if (activity == null || url == null || url.isEmpty()) return;
+            
+            activity.mainHandler.post(() -> {
+                if (!activity.detectedMediaUrls.contains(url)) {
+                    activity.detectedMediaUrls.add(url);
+                }
+            });
+        }
     }
 
     /**
@@ -2557,6 +2631,102 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 "<button class='btn' onclick='SocialOneNative.retry()'>Try Again</button>" +
                 "</div></body></html>";
         view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
+    }
+
+
+
+    private void showMediaGrabberDialog() {
+        if (detectedMediaUrls.isEmpty()) {
+            Toast.makeText(this, "No media found on this page.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        List<String> urls = new ArrayList<>(detectedMediaUrls);
+        
+        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_history, null);
+        TextView title = dialogView.findViewById(R.id.historyTitle);
+        title.setText("Media Found on Page");
+        
+        RecyclerView rv = dialogView.findViewById(R.id.historyRecyclerView);
+        Button downloadAll = dialogView.findViewById(R.id.btnClearAllHistory);
+        ImageButton closeBtn = dialogView.findViewById(R.id.btnCloseHistory);
+        TextView tvEmpty = dialogView.findViewById(R.id.tvEmptyMessage);
+
+        tvEmpty.setVisibility(View.GONE);
+        downloadAll.setText("Download All");
+        downloadAll.setVisibility(View.VISIBLE);
+        setClickAnimation(closeBtn);
+        setClickAnimation(downloadAll);
+
+        class MediaGrabberAdapter extends RecyclerView.Adapter<MediaGrabberAdapter.ViewHolder> {
+            @NonNull
+            @Override
+            public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+                View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_grab_media, parent, false);
+                return new ViewHolder(v);
+            }
+
+            @Override
+            public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+                String url = urls.get(position);
+                String ext = MimeTypeMap.getFileExtensionFromUrl(url);
+                String domain = getDomain(url);
+                
+                holder.name.setText("Media " + (position + 1) + " (" + domain + ")");
+                holder.extension.setText(ext.isEmpty() ? "unknown" : ext.toUpperCase());
+
+                com.bumptech.glide.Glide.with(MainActivity.this)
+                        .load(url)
+                        .centerCrop()
+                        .placeholder(android.R.drawable.ic_menu_gallery)
+                        .error(android.R.drawable.ic_menu_report_image)
+                        .into(holder.preview);
+
+                holder.itemView.setOnClickListener(v -> {
+                    downloadFile(url, null, null, userAgent);
+                });
+            }
+
+            @Override
+            public int getItemCount() { return urls.size(); }
+
+            class ViewHolder extends RecyclerView.ViewHolder {
+                ImageView preview;
+                TextView name, extension;
+                ViewHolder(View v) {
+                    super(v);
+                    preview = v.findViewById(R.id.ivMediaPreview);
+                    name = v.findViewById(R.id.tvMediaName);
+                    extension = v.findViewById(R.id.tvMediaExtension);
+                }
+            }
+        }
+
+        rv.setLayoutManager(new LinearLayoutManager(this));
+        rv.setAdapter(new MediaGrabberAdapter());
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder builder = new com.google.android.material.dialog.MaterialAlertDialogBuilder(this);
+        builder.setView(dialogView);
+        AlertDialog dialog = builder.create();
+
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
+
+        closeBtn.setOnClickListener(v -> dialog.dismiss());
+        downloadAll.setOnClickListener(v -> {
+            for (String url : urls) {
+                downloadFile(url, null, null, userAgent);
+            }
+            dialog.dismiss();
+        });
+
+        dialog.show();
+        
+        if (dialog.getWindow() != null) {
+            int width = (int) (getResources().getDisplayMetrics().widthPixels * 0.95);
+            dialog.getWindow().setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
     }
 
     /**
