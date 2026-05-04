@@ -51,6 +51,20 @@
                     android:textSize="18sp"
                     android:textStyle="bold" />
 
+                <ImageButton
+                    android:id="@+id/btnClearAll"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_alignParentEnd="true"
+                    android:layout_centerVertical="true"
+                    android:layout_marginEnd="4dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:padding="14dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/trashbin"
+                    app:tint="@color/primary_text"
+                    android:contentDescription="Clear all" />
+
             </RelativeLayout>
 
         </com.google.android.material.appbar.MaterialToolbar>
@@ -118,17 +132,22 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginTop="20dp">
+                android:gravity="right|center_vertical"
+                android:layout_marginTop="20dp"
+                >
 
-                <TextView
-                    android:layout_width="0dp"
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSaveDraft"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Attached Media"
-                    android:textStyle="bold"
-                    android:textSize="16sp"
-                    android:textColor="@color/primary_text"/>
+                    android:layout_marginEnd="8dp"
+                    android:text="Save Draft"
+                    android:textColor="@color/button_background"
+                    app:strokeColor="@color/button_background"
+                    app:iconTint="@color/button_background"
+                    app:cornerRadius="8dp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnAddMedia"
@@ -140,7 +159,19 @@
                     app:icon="@drawable/camera"
                     app:iconTint="@color/button_text"
                     app:cornerRadius="8dp" />
+
             </LinearLayout>
+
+            <TextView
+                android:id="@+id/AttachedMedia"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:layout_weight="1"
+                android:text="Attached Media"
+                android:textColor="@color/primary_text"
+                android:textSize="16sp"
+                android:textStyle="bold" />
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rvMediaPreviews"
@@ -148,7 +179,49 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:clipToPadding="false"
-                android:paddingBottom="80dp" />
+                android:paddingBottom="4dp" />
+
+            <TextView
+                android:id="@+id/tvMediaPlaceholder"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="40dp"
+                android:layout_marginBottom="40dp"
+                android:gravity="center"
+                android:text="The attached media will appear here"
+                android:textColor="@color/secondary_text"
+                android:textSize="14sp"
+                android:textStyle="italic" />
+
+            <TextView
+                android:id="@+id/tvDraftsTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Your Drafts"
+                android:textStyle="bold"
+                android:textSize="16sp"
+                android:textColor="@color/primary_text" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rvDrafts"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:clipToPadding="false"
+                android:paddingBottom="4dp" />
+
+            <TextView
+                android:id="@+id/tvDraftsPlaceholder"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="40dp"
+                android:layout_marginBottom="100dp"
+                android:gravity="center"
+                android:text="The drafts will appear here"
+                android:textColor="@color/secondary_text"
+                android:textSize="14sp"
+                android:textStyle="italic" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

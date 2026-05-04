@@ -125,6 +125,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private final Map<String, Bitmap> tabPreviews = new HashMap<>();
     private final Set<String> incognitoTabs = new HashSet<>();
     private final Map<WebView, String> failingUrls = new HashMap<>();
+    private final Map<WebView, Runnable> timeoutRunnables = new HashMap<>();
     private final Map<WebView, Boolean> desktopModeMap = new HashMap<>();
     
     // Adapters for various UI lists
@@ -156,7 +157,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
     // UI Panels and interactive elements
     private CardView controlsPanel, searchPanel, moreOptionsPanel, tabSwitcherPanel;
-    private Button btnGrabMedia;
+    private Button btnGrabMedia, btnFindOnPage;
     private View btnExpandTabs, handleTouchArea;
     private SwipeRefreshLayout swipeRefreshLayout;
     private MaterialSwitch switchDesktopSite;
@@ -266,7 +267,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             
             boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
             boolean isHome = HOME_URL.equals(currentUrl);
-            
+
             // If Find on Page is active, we ignore the IME insets for the bottom bar 
             // so it stays behind the keyboard and doesn't squish the UI
             int effectiveImeBottom = isFindOnPageActive ? 0 : ime.bottom;
@@ -379,7 +380,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
         Button btnViewHistory = findViewById(R.id.btnViewHistory);
         Button btnViewDownloads = findViewById(R.id.btnViewDownloads);
-        Button btnFindOnPage = findViewById(R.id.btnFindOnPage);
+        btnFindOnPage = findViewById(R.id.btnFindOnPage);
         Button btnShareQR = findViewById(R.id.btnShareQR);
         Button btnOpenQuickAccessMessages = findViewById(R.id.btnOpenQuickAccessMessages);
         Button btnSettings = findViewById(R.id.btnSettings);
@@ -408,9 +409,6 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
         firestoreManager = new FirestoreManager();
 
-        // Auth state listener to update UI
-        FirebaseAuth.getInstance().addAuthStateListener(auth -> updateAuthUI(btnAuthAction));
-
         // Load saved state from SharedPreferences
         sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         
@@ -436,59 +434,6 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
         // Initial Migration to Cloud
         firestoreManager.performInitialMigration(siteList, bookmarksList, historyList);
-
-        // Sync from Cloud
-        firestoreManager.loadUserData(new FirestoreManager.OnDataLoadedListener() {
-            @Override
-            public void onDataLoaded(List<String> tabs, List<String> bookmarks, List<String> history) {
-                if (tabs != null && !tabs.isEmpty()) {
-                    siteList.clear();
-                    for (String tab : tabs) {
-                        if ("home://business".equals(tab)) {
-                            siteList.add(QUICK_ACCESS_MESSAGES_URL);
-                        } else {
-                            siteList.add(tab);
-                        }
-                    }
-                    // Ensure Home is present if list is corrupted
-                    if (!siteList.contains(HOME_URL)) siteList.add(0, HOME_URL);
-                    saveSitesLocally(); // Sync back to local storage
-                    sitesAdapter.notifyDataSetChanged();
-                    updateTabCountDisplay();
-                }
-                if (bookmarks != null) {
-                    bookmarksList.clear();
-                    for (String b : bookmarks) {
-                        if ("home://business".equals(b)) {
-                            bookmarksList.add(QUICK_ACCESS_MESSAGES_URL);
-                        } else {
-                            bookmarksList.add(b);
-                        }
-                    }
-                    saveBookmarksLocally();
-                    bookmarksAdapter.updateFilteredList();
-                    updateBookmarksVisibility();
-                }
-                if (history != null) {
-                    historyList.clear();
-                    for (String h : history) {
-                        if ("home://business".equals(h)) {
-                            historyList.add(QUICK_ACCESS_MESSAGES_URL);
-                        } else {
-                            historyList.add(h);
-                        }
-                    }
-                    saveHistoryLocally();
-                    recentSitesAdapter.updateFilteredList();
-                    updateRecentVisibility();
-                }
-            }
-
-            @Override
-            public void onError(Exception e) {
-                Log.e("MainActivity", "Failed to load cloud data", e);
-            }
-        });
 
         setupAutocomplete(urlInput);
         setupAutocomplete(searchInput);
@@ -566,7 +511,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         // Define scroll listener for auto-hiding the toolbar
         scrollListener = (v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
             if (v instanceof WebView && currentUrl != null && tabMap.get(currentUrl) == v) {
-                swipeRefreshLayout.setEnabled(scrollY == 0);
+                updateSwipeRefreshState((WebView) v);
             }
 
             if (!sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false)) return;
@@ -724,7 +669,14 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
         btnViewHistory.setOnClickListener(v -> showHistoryDialog());
         btnViewDownloads.setOnClickListener(v -> showDownloadsDialog());
-        btnFindOnPage.setOnClickListener(v -> showFindOnPageDialog());
+        btnFindOnPage.setOnClickListener(v -> {
+            View currentView = tabMap.get(currentUrl);
+            if (currentView instanceof WebView) {
+                showFindOnPageDialog();
+            } else {
+                Toast.makeText(this, "Find on Page is not available on this screen", Toast.LENGTH_SHORT).show();
+            }
+        });
         btnShareQR.setOnClickListener(v -> showQRCodeDialog());
 
         btnAuthAction.setOnClickListener(v -> {
@@ -762,7 +714,12 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                             .requestEmail()
                             .build();
                     GoogleSignIn.getClient(this, gso).signOut();
-                    // UI will update via AuthStateListener
+                    
+                    // Restart the app to clear all state
+                    Intent intent = new Intent(this, MainActivity.class);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                    startActivity(intent);
+                    finish();
                 });
 
                 dBtnCancel.setOnClickListener(v2 -> logoutDialog.dismiss());
@@ -930,6 +887,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         // Open home page by default
         onSiteClick(0);
 
+        // Auth state listener to update UI
+        FirebaseAuth.getInstance().addAuthStateListener(auth -> updateAuthUI(btnAuthAction));
+
         // Handle back press navigation
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
@@ -1071,7 +1031,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         searchPanel.setVisibility(View.GONE);
         moreOptionsPanel.setVisibility(View.GONE);
         tabSwitcherPanel.setVisibility(View.GONE);
-        
+
         boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
         if (advancedAnim && handleTouchArea != null) handleTouchArea.setVisibility(View.VISIBLE);
         
@@ -1211,7 +1171,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         onSiteClick(position);
         beginPanelTransition();
         tabSwitcherPanel.setVisibility(View.GONE);
-        
+
         boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
         if (advancedAnim && handleTouchArea != null) handleTouchArea.setVisibility(View.VISIBLE);
         
@@ -1239,6 +1199,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 if (tab != null) {
                     if (tab instanceof WebView) {
                         failingUrls.remove((WebView) tab);
+                        cancelTimeout((WebView) tab);
                         if (incognitoTabs.contains(removedUrl)) {
                             ((WebView) tab).clearCache(true);
                             ((WebView) tab).clearHistory();
@@ -2135,6 +2096,13 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         sharedPreferences.edit().putStringSet(LOCKED_SITES_KEY, locked).apply();
     }
 
+    private void cancelTimeout(WebView view) {
+        Runnable r = timeoutRunnables.remove(view);
+        if (r != null) {
+            mainHandler.removeCallbacks(r);
+        }
+    }
+
     /**
      * Hides the custom fullscreen view (e.g., for video playback).
      */
@@ -2429,21 +2397,27 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             @Override
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
                 super.onPageStarted(view, url, favicon);
+                cancelTimeout(view);
+
                 if (currentUrl != null && tabMap.get(currentUrl) == view) {
                     progressBar.setVisibility(View.VISIBLE);
+                    updateSwipeRefreshState(view);
                     // Clear media list when starting a new page
                     detectedMediaUrls.clear();
                 }
                 
                 // Add a timeout logic to handle stuck tabs
-                mainHandler.postDelayed(() -> {
+                Runnable timeoutRunnable = () -> {
                     if (view.getProgress() < 100 && tabMap.containsValue(view)) {
                         progressBar.setVisibility(View.GONE);
                         swipeRefreshLayout.setRefreshing(false);
                         view.stopLoading();
                         showErrorPage(view, "Timeout", "The page took too long to respond.");
                     }
-                }, 60000); // 30 second timeout
+                    timeoutRunnables.remove(view);
+                };
+                timeoutRunnables.put(view, timeoutRunnable);
+                mainHandler.postDelayed(timeoutRunnable, 60000);
             }
 
             @Override
@@ -2454,6 +2428,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             @Override
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
                 super.onReceivedError(view, errorCode, description, failingUrl);
+                cancelTimeout(view);
                 if (currentUrl != null && tabMap.get(currentUrl) == view) {
                     progressBar.setVisibility(View.GONE);
                     swipeRefreshLayout.setRefreshing(false);
@@ -2465,9 +2440,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                cancelTimeout(view);
                 if (currentUrl != null && tabMap.get(currentUrl) == view) {
                     progressBar.setVisibility(View.GONE);
                     swipeRefreshLayout.setRefreshing(false);
+                    updateSwipeRefreshState(view);
                 }
                 
                 // We now scan for media dynamically when the user clicks the Grab Media button
@@ -2803,7 +2780,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             if (newTab instanceof WebView) {
                 WebView wv = (WebView) newTab;
                 wv.onResume();
-                swipeRefreshLayout.setEnabled(wv.getScrollY() == 0);
+                updateSwipeRefreshState(wv);
                 
                 // Update Desktop Site switch state
                 Boolean isDesktop = desktopModeMap.get(wv);
@@ -2881,6 +2858,79 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         Toast.makeText(this, "Global search success", Toast.LENGTH_SHORT).show();
     }
 
+    private void updateSwipeRefreshState(WebView wv) {
+        if (wv == null || swipeRefreshLayout == null) {
+            if (swipeRefreshLayout != null) swipeRefreshLayout.setEnabled(false);
+            return;
+        }
+
+        // Revert to scroll-position based enabling.
+        // We only enable the pull-to-refresh if the WebView reports it is at the very top.
+        // This allows refresh on all sites while minimizing accidental triggers on Shorts/Instagram.
+        swipeRefreshLayout.setEnabled(!wv.canScrollVertically(-1));
+    }
+
+    private void updateUIWithCloudData(List<String> tabs, List<String> bookmarks, List<String> history, boolean clearExisting) {
+        if (siteList == null || bookmarksList == null || historyList == null) return;
+
+        boolean changed = false;
+        if (tabs != null && !tabs.isEmpty()) {
+            if (clearExisting) siteList.clear();
+            for (String tab : tabs) {
+                String normalized = "home://business".equals(tab) ? QUICK_ACCESS_MESSAGES_URL : tab;
+                if (!siteList.contains(normalized)) {
+                    siteList.add(normalized);
+                    changed = true;
+                }
+            }
+            if (!siteList.contains(HOME_URL)) {
+                siteList.add(0, HOME_URL);
+                changed = true;
+            }
+            if (changed || clearExisting) {
+                saveSitesLocally();
+                sitesAdapter.notifyDataSetChanged();
+                tabSwitcherAdapter.notifyDataSetChanged();
+                if (searchSitesAdapter != null) searchSitesAdapter.updateFilteredList();
+                updateTabCountDisplay();
+            }
+        }
+
+        if (bookmarks != null) {
+            boolean bChanged = false;
+            if (clearExisting) bookmarksList.clear();
+            for (String b : bookmarks) {
+                String normalized = "home://business".equals(b) ? QUICK_ACCESS_MESSAGES_URL : b;
+                if (!bookmarksList.contains(normalized)) {
+                    bookmarksList.add(normalized);
+                    bChanged = true;
+                }
+            }
+            if (bChanged || clearExisting) {
+                saveBookmarksLocally();
+                bookmarksAdapter.updateFilteredList();
+                updateBookmarksVisibility();
+            }
+        }
+
+        if (history != null) {
+            boolean hChanged = false;
+            if (clearExisting) historyList.clear();
+            for (String h : history) {
+                String normalized = "home://business".equals(h) ? QUICK_ACCESS_MESSAGES_URL : h;
+                if (!historyList.contains(normalized)) {
+                    historyList.add(normalized);
+                    hChanged = true;
+                }
+            }
+            if (hChanged || clearExisting) {
+                saveHistoryLocally();
+                recentSitesAdapter.updateFilteredList();
+                updateRecentVisibility();
+            }
+        }
+    }
+
     /**
      * Clears all local user data from SharedPreferences and active WebViews.
      */
@@ -2902,24 +2952,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 firestoreManager.loadUserData(new FirestoreManager.OnDataLoadedListener() {
                     @Override
                     public void onDataLoaded(List<String> tabs, List<String> bookmarks, List<String> history) {
-                        if (tabs != null && !tabs.isEmpty()) {
-                            for (String tab : tabs) if (!siteList.contains(tab)) siteList.add(tab);
-                            saveSitesLocally();
-                            sitesAdapter.notifyDataSetChanged();
-                            updateTabCountDisplay();
-                        }
-                        if (bookmarks != null) {
-                            for (String b : bookmarks) if (!bookmarksList.contains(b)) bookmarksList.add(b);
-                            saveBookmarksLocally();
-                            bookmarksAdapter.updateFilteredList();
-                            updateBookmarksVisibility();
-                        }
-                        if (history != null) {
-                            for (String h : history) if (!historyList.contains(h)) historyList.add(h);
-                            saveHistoryLocally();
-                            recentSitesAdapter.updateFilteredList();
-                            updateRecentVisibility();
-                        }
+                        updateUIWithCloudData(tabs, bookmarks, history, false);
                     }
                     @Override public void onError(Exception e) { Log.e("MainActivity", "Sync error", e); }
                 });
@@ -2969,7 +3002,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
      */
     private void updateTabSwitcherHeight() {
         if (tabSwitcherPanel == null) return;
-        
+
         tabSwitcherPanel.post(() -> {
             View mainView = findViewById(R.id.main);
             int totalHeight = mainView.getHeight();
@@ -2981,14 +3014,22 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
             int bHeight = bottomBar != null ? bottomBar.getHeight() : 0;
             int cHeight = (controls != null && controls.getVisibility() == View.VISIBLE) ? controls.getHeight() : 0;
-            int bottomPadding = bottomUiContainer.getPaddingBottom();
+            int bottomUiPadding = bottomUiContainer.getPaddingBottom();
 
-            // Subtract bottom UI elements and a larger safety margin for the top
-            // This ensures a visible gap between the switcher and the status bar/action bar
-            int targetHeight = totalHeight - bHeight - cHeight - bottomPadding - dpToPx(80);
+            // Subtract BOTH top and bottom system bar insets from mainView.
+            // In normal/home mode the nav bar sits in mainView's bottom padding,
+            // and the status bar always sits in mainView's top padding.
+            // Neither was being removed before, so the panel was computed too tall.
+            int mainViewTopPadding = mainView.getPaddingTop();
+            int mainViewBottomPadding = mainView.getPaddingBottom();
 
-            // Ensure a reasonable minimum height
-            if (targetHeight < dpToPx(200)) targetHeight = dpToPx(200);
+            // True available content height (between status bar and nav bar)
+            int availableHeight = totalHeight - mainViewTopPadding - mainViewBottomPadding;
+
+            // Subtract bottom bar, visible panels, container padding, and a small visual buffer
+            int targetHeight = availableHeight - bHeight - cHeight - bottomUiPadding - dpToPx(40);
+
+            if (targetHeight < dpToPx(150)) targetHeight = dpToPx(150);
 
             ViewGroup.LayoutParams params = tabSwitcherPanel.getLayoutParams();
             if (params != null) {
@@ -3033,7 +3074,6 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         Set<String> set = sharedPreferences.getStringSet(SITES_KEY, null);
         if (set == null || set.isEmpty()) {
             siteList = new ArrayList<>();
-            saveSites();
         } else {
             siteList = new ArrayList<>();
             for (String url : set) {
@@ -3339,9 +3379,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         }
         for (View v : tabMap.values()) {
             if (v instanceof WebView) {
+                cancelTimeout((WebView) v);
                 ((WebView) v).destroy();
             }
         }
+        timeoutRunnables.clear();
         tabMap.clear();
         tabPreviews.clear();
         incognitoTabs.clear();
