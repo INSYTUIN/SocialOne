@@ -1438,37 +1438,29 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         setClickAnimation(link5);
         setClickAnimation(link6);
 
-        link1.setOnClickListener(v -> openInWebView("https://www.linkedin.com/messaging/"));
-        link2.setOnClickListener(v -> openInWebView("https://twitter.com/messages"));
-        link3.setOnClickListener(v -> handleMessengerClick());
-        link4.setOnClickListener(v -> openInWebView("https://www.instagram.com/direct/inbox/"));
-        link5.setOnClickListener(v -> openInWebView("https://mail.google.com/mail/u/0/#inbox"));
-        link6.setOnClickListener(v -> handleWhatsAppClick());
-    }
-
-    private void handleMessengerClick() {
-        launchOrStore("com.facebook.orca");
-    }
-
-    private void handleWhatsAppClick() {
-        launchOrStore("com.whatsapp");
+        link1.setOnClickListener(v -> launchAppOrWeb("com.linkedin.android", "https://www.linkedin.com/messaging/"));
+        link2.setOnClickListener(v -> launchAppOrWeb("com.twitter.android", "https://twitter.com/messages"));
+        link3.setOnClickListener(v -> launchAppOrWeb("com.facebook.orca", "https://www.facebook.com/messages/"));
+        link4.setOnClickListener(v -> launchAppOrWeb("com.instagram.android", "https://www.instagram.com/direct/inbox/"));
+        link5.setOnClickListener(v -> launchAppOrWeb("com.google.android.gm", "https://mail.google.com/mail/u/0/#inbox"));
+        link6.setOnClickListener(v -> launchAppOrWeb("com.whatsapp", "https://web.whatsapp.com/"));
     }
 
     /**
-     * Launches an external app or opens it in the Play Store if not installed.
-     * @param packageName The package name of the app to launch.
+     * Attempts to launch a native app by package name. 
+     * Falls back to opening the web URL in the app's WebView if the app is not installed.
      */
-    private void launchOrStore(String packageName) {
+    private void launchAppOrWeb(String packageName, String webUrl) {
         PackageManager pm = getPackageManager();
         Intent intent = pm.getLaunchIntentForPackage(packageName);
         if (intent != null) {
             try {
                 startActivity(intent);
             } catch (Exception e) {
-                openOnPlayStore(packageName);
+                openInWebView(webUrl);
             }
         } else {
-            openOnPlayStore(packageName);
+            openInWebView(webUrl);
         }
     }
 
