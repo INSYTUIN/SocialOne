@@ -44,6 +44,8 @@ import android.webkit.SslErrorHandler;
 import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebStorage;
 import android.webkit.WebView;
@@ -89,6 +91,7 @@ import com.google.firebase.auth.FirebaseUser;
 import org.json.JSONArray;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.InputStreamReader;
 import java.lang.ref.WeakReference;
@@ -110,6 +113,7 @@ import java.util.concurrent.Executors;
  */
 public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSiteClickListener, HistoryAdapter.OnHistoryClickListener, RecentSitesAdapter.OnRecentClickListener, TabSwitcherAdapter.OnTabClickListener {
 
+    
     // UI Components for WebView and Fullscreen management
     private FrameLayout webViewContainer, fullscreenContainer;
     private NestedScrollView homeView, quickAccessMessagesView, incognitoHomeView;
@@ -148,7 +152,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private static final String PREDICTIONS_KEY = "SearchPredictionsEnabled";
     private static final String SEARCH_ENGINE_KEY = "DefaultSearchEngine";
     private static final String ADVANCED_ANIM_KEY = "AdvancedAnimationsEnabled";
-    
+    private static final String AD_BLOCKER_KEY = "AdBlockerEnabled";
+
     private String currentUrl = null;
     private int currentPosition = -1;
     private static final String HOME_URL = "home://dashboard";
@@ -173,28 +178,20 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private View.OnScrollChangeListener scrollListener;
     private Button btnDoGlobalSearch;
     
-    private static final int ANIM_DURATION = 150;
+    private static final int ANIM_DURATION = 100;
     private String userAgent;
     private static final String DESKTOP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-    private static final String[] SEARCH_URLS = {
-        "https://www.google.com/search?q=",
-        "https://www.bing.com/search?q=",
-        "https://search.brave.com/search?q=",
-        "https://duckduckgo.com/?q=",
-        "https://www.startpage.com/do/dsearch?query=",
-        "https://www.ecosia.org/search?q="
-    };
-
     // Dialogs and Handlers for background tasks
     private AlertDialog historyDialog;
-    private AlertDialog downloadsDialog;
+    private DownloadHandler downloadHandler;
+    private MediaHandler mediaHandler;
+    private PreferenceManager preferenceManager;
+    private SearchHandler searchHandler;
     private FirestoreManager firestoreManager;
     private final ExecutorService executorService = Executors.newSingleThreadExecutor();
     private final Set<String> detectedMediaUrls = new HashSet<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final Handler downloadUpdateHandler = new Handler(Looper.getMainLooper());
-    private Runnable downloadUpdateRunnable;
 
     // File chooser launcher for WebView file uploads
     private ValueCallback<Uri[]> filePathCallback;
@@ -238,6 +235,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         setContentView(R.layout.activity_main);
 
         userAgent = WebSettings.getDefaultUserAgent(this);
+        firestoreManager = new FirestoreManager();
+        downloadHandler = new DownloadHandler(this);
+        mediaHandler = new MediaHandler(this, downloadHandler, userAgent);
+        preferenceManager = new PreferenceManager(this, firestoreManager);
+        searchHandler = new SearchHandler(this);
 
         // Initialize main views and layouts
         View mainView = findViewById(R.id.main);
@@ -283,10 +285,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 lp.addRule(RelativeLayout.ABOVE, R.id.bottomUiContainer);
                 
                 // Content fits exactly above the bar, no extra bottom padding needed
-                if (homeView != null) homeView.setPadding(dpToPx(20), dpToPx(20), dpToPx(20), dpToPx(20));
+                if (homeView != null) homeView.setPadding(UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20));
                 if (webViewContainer != null) webViewContainer.setPadding(0, 0, 0, 0);
-                if (quickAccessMessagesView != null) quickAccessMessagesView.setPadding(dpToPx(20), dpToPx(20), dpToPx(20), dpToPx(20));
-                if (incognitoHomeView != null) incognitoHomeView.setPadding(dpToPx(24), dpToPx(24), dpToPx(24), dpToPx(24));
+                if (quickAccessMessagesView != null) quickAccessMessagesView.setPadding(UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20));
+                if (incognitoHomeView != null) incognitoHomeView.setPadding(UIUtils.dpToPx(this, 24), UIUtils.dpToPx(this, 24), UIUtils.dpToPx(this, 24), UIUtils.dpToPx(this, 24));
             } else {
                 // Other tabs or Advanced Mode: Immersive edge-to-edge drawing
                 // This allows content to draw behind the floating/semi-transparent panels
@@ -294,7 +296,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 bottomUiContainer.setPadding(0, 0, 0, bottomPadding);
                 lp.removeRule(RelativeLayout.ABOVE);
                 
-                int barHeight = dpToPx(80);
+                int barHeight = UIUtils.dpToPx(this, 80);
                 int extraContentPadding = bottomPadding + barHeight;
 
                 if (webViewContainer != null) {
@@ -304,9 +306,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                     webViewContainer.setPadding(0, 0, 0, webPadding);
                 }
 
-                if (homeView != null) homeView.setPadding(dpToPx(20), dpToPx(20), dpToPx(20), extraContentPadding);
-                if (quickAccessMessagesView != null) quickAccessMessagesView.setPadding(dpToPx(20), dpToPx(20), dpToPx(20), extraContentPadding);
-                if (incognitoHomeView != null) incognitoHomeView.setPadding(dpToPx(24), dpToPx(24), dpToPx(24), extraContentPadding);
+                if (homeView != null) homeView.setPadding(UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20), extraContentPadding);
+                if (quickAccessMessagesView != null) quickAccessMessagesView.setPadding(UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20), extraContentPadding);
+                if (incognitoHomeView != null) incognitoHomeView.setPadding(UIUtils.dpToPx(this, 24), UIUtils.dpToPx(this, 24), UIUtils.dpToPx(this, 24), extraContentPadding);
             }
 
             boolean isKeyboardVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
@@ -388,28 +390,28 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         switchDesktopSite = findViewById(R.id.switchDesktopSite);
 
         // Apply click animation to buttons
-        setClickAnimation(globalSearchFab);
-        setClickAnimation(moreOptionsButton);
-        setClickAnimation(btnCreatePost);
-        setClickAnimation(btnForward);
-        setClickAnimation(toggleButton);
-        setClickAnimation(btnDoGlobalSearch);
-        setClickAnimation(btnViewHistory);
-        setClickAnimation(btnViewDownloads);
-        setClickAnimation(btnFindOnPage);
-        setClickAnimation(btnShareQR);
-        setClickAnimation(btnSettings);
-        setClickAnimation(btnAuthAction);
-        setClickAnimation(btnOpenQuickAccessMessages);
-        setClickAnimation(btnExpandTabs);
-        setClickAnimation(btnGrabMedia);
-        setClickAnimation(btnDeleteAllTabs);
-        setClickAnimation(btnIncognito);
-        setClickAnimation(btnNewTab);
+        UIUtils.setClickAnimation(this, globalSearchFab);
+        UIUtils.setClickAnimation(this, moreOptionsButton);
+        UIUtils.setClickAnimation(this, btnCreatePost);
+        UIUtils.setClickAnimation(this, btnForward);
+        UIUtils.setClickAnimation(this, toggleButton);
+        UIUtils.setClickAnimation(this, btnDoGlobalSearch);
+        UIUtils.setClickAnimation(this, btnViewHistory);
+        UIUtils.setClickAnimation(this, btnViewDownloads);
+        UIUtils.setClickAnimation(this, btnFindOnPage);
+        UIUtils.setClickAnimation(this, btnShareQR);
+        UIUtils.setClickAnimation(this, btnSettings);
+        UIUtils.setClickAnimation(this, btnAuthAction);
+        UIUtils.setClickAnimation(this, btnOpenQuickAccessMessages);
+        UIUtils.setClickAnimation(this, btnExpandTabs);
+        UIUtils.setClickAnimation(this, btnGrabMedia);
+        UIUtils.setClickAnimation(this, btnDeleteAllTabs);
+        UIUtils.setClickAnimation(this, btnIncognito);
+        UIUtils.setClickAnimation(this, btnNewTab);
 
         firestoreManager = new FirestoreManager();
 
-        // Load saved state from SharedPreferences
+        // Load saved state from PreferenceManager
         sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         
         boolean advancedAnimEnabled = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
@@ -417,7 +419,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             handleTouchArea.setVisibility(View.GONE);
             isToolbarVisible = true;
             isManualHide = false;
-            bottomBar.setBackgroundColor(androidx.core.content.ContextCompat.getColor(this, R.color.panel_background));
+            bottomBar.setBackgroundColor(androidx.core.content.ContextCompat.getColor(this, R.color.bottom_bar));
             bottomUiContainer.setBackgroundColor(Color.TRANSPARENT);
         } else {
             handleTouchArea.setVisibility(View.VISIBLE);
@@ -427,16 +429,17 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             getWindow().setNavigationBarColor(Color.TRANSPARENT);
         }
 
-        loadSites();
-        loadHistory();
-        loadBookmarks();
+        siteList = preferenceManager.loadSites(HOME_URL, QUICK_ACCESS_MESSAGES_URL);
+        historyList = preferenceManager.loadHistory();
+        bookmarksList = preferenceManager.loadBookmarks();
         loadPreviewsFromDisk();
+        AdBlockerHosts.loadFromAssets(this);
 
         // Initial Migration to Cloud
         firestoreManager.performInitialMigration(siteList, bookmarksList, historyList);
 
-        setupAutocomplete(urlInput);
-        setupAutocomplete(searchInput);
+        searchHandler.setupAutocomplete(urlInput, this::handleUrlInput);
+        searchHandler.setupAutocomplete(searchInput, () -> btnDoGlobalSearch.performClick());
 
         btnSettings.setOnClickListener(v -> {
             Intent intent = new Intent(this, SettingsActivity.class);
@@ -491,13 +494,13 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         updateBookmarksVisibility();
 
         tabSwitcherAdapter = new TabSwitcherAdapter(siteList, tabPreviews, this);
-        tabSwitcherRecyclerView.setLayoutManager(new GridLayoutManager(this, 2));
+        tabSwitcherRecyclerView.setLayoutManager(new GridLayoutManager(this, getTabSwitcherSpanCount()));
         tabSwitcherRecyclerView.setAdapter(tabSwitcherAdapter);
         
         // Enable and customize animations
         androidx.recyclerview.widget.DefaultItemAnimator animator = new androidx.recyclerview.widget.DefaultItemAnimator();
-        animator.setAddDuration(350);
-        animator.setRemoveDuration(350);
+        animator.setAddDuration(ANIM_DURATION);
+        animator.setRemoveDuration(ANIM_DURATION);
         tabSwitcherRecyclerView.setItemAnimator(animator);
 
         tabSwitcherPanel.setOnTouchListener((v, event) -> {
@@ -566,6 +569,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         });
 
         btnExpandTabs.setOnClickListener(v -> {
+            if (getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && !isTablet()) {
+                Toast.makeText(this, "Tab switcher is not available in landscape mode", Toast.LENGTH_SHORT).show();
+                return;
+            }
             updateTabSwitcherHeight(); // Calculate height before showing to avoid jumps
             beginPanelTransition();
             
@@ -625,6 +632,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         });
 
         globalSearchFab.setOnClickListener(v -> {
+            if (getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && !isTablet()) {
+                Toast.makeText(this, "Global search is not available in landscape mode", Toast.LENGTH_SHORT).show();
+                return;
+            }
             beginPanelTransition();
             
             if (searchPanel.getVisibility() == View.VISIBLE) {
@@ -638,6 +649,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         });
 
         moreOptionsButton.setOnClickListener(v -> {
+            if (getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && !isTablet()) {
+                Toast.makeText(this, "Options are not available in landscape mode", Toast.LENGTH_SHORT).show();
+                return;
+            }
             beginPanelTransition();
             
             if (moreOptionsPanel.getVisibility() == View.VISIBLE) {
@@ -668,7 +683,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         });
 
         btnViewHistory.setOnClickListener(v -> showHistoryDialog());
-        btnViewDownloads.setOnClickListener(v -> showDownloadsDialog());
+        btnViewDownloads.setOnClickListener(v -> downloadHandler.showDownloadsDialog());
         btnFindOnPage.setOnClickListener(v -> {
             View currentView = tabMap.get(currentUrl);
             if (currentView instanceof WebView) {
@@ -677,7 +692,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 Toast.makeText(this, "Find on Page is not available on this screen", Toast.LENGTH_SHORT).show();
             }
         });
-        btnShareQR.setOnClickListener(v -> showQRCodeDialog());
+        btnShareQR.setOnClickListener(v -> mediaHandler.showQRCodeDialog(currentUrl));
 
         btnAuthAction.setOnClickListener(v -> {
             FirebaseUser activeUser = FirebaseAuth.getInstance().getCurrentUser();
@@ -694,8 +709,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 dBtnConfirm.setText(R.string.logout_confirm);
                 dBtnConfirm.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#FF5252")));
 
-                setClickAnimation(dBtnConfirm);
-                setClickAnimation(dBtnCancel);
+                UIUtils.setClickAnimation(this, dBtnConfirm);
+                UIUtils.setClickAnimation(this, dBtnCancel);
 
                 com.google.android.material.dialog.MaterialAlertDialogBuilder builder = new com.google.android.material.dialog.MaterialAlertDialogBuilder(this);
                 builder.setView(dialogView);
@@ -876,7 +891,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                             beginPanelTransition();
                             hideAllPanelsInternal();
                             
-                            showMediaGrabberDialog();
+                            mediaHandler.showMediaGrabberDialog(detectedMediaUrls);
                         }
                 );
             } else {
@@ -884,8 +899,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             }
         });
 
-        // Open home page by default
-        onSiteClick(0);
+        // Handle incoming intent if app was opened via a web link
+        if (!handleIntent(getIntent())) {
+            // Open home page by default if no external URL was provided
+            onSiteClick(0);
+        }
 
         // Auth state listener to update UI
         FirebaseAuth.getInstance().addAuthStateListener(auth -> updateAuthUI(btnAuthAction));
@@ -928,26 +946,48 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         });
     }
 
-    private String getSearchBaseUrl() {
-        int index = sharedPreferences.getInt(SEARCH_ENGINE_KEY, 0);
-        return SEARCH_URLS[index];
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIntent(intent);
     }
 
     /**
-     * Applies a scale animation to a view when touched to provide visual feedback.
-     * @param view The view to apply the animation to.
+     * Handles an incoming intent to see if it contains a URL to be opened.
+     * @param intent The intent to check.
+     * @return True if a URL was found and handled, false otherwise.
      */
-    @SuppressLint("ClickableViewAccessibility")
-    private void setClickAnimation(View view) {
-        if (view == null) return;
-        view.setOnTouchListener((v, event) -> {
-            if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                v.startAnimation(AnimationUtils.loadAnimation(this, R.anim.scale_down));
-            } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
-                v.startAnimation(AnimationUtils.loadAnimation(this, R.anim.scale_up));
+    private boolean handleIntent(Intent intent) {
+        if (intent != null && Intent.ACTION_VIEW.equals(intent.getAction())) {
+            Uri data = intent.getData();
+            if (data != null) {
+                String url = data.toString();
+                openInWebView(url);
+                return true;
             }
-            return false;
-        });
+        }
+        return false;
+    }
+
+    private int getTabSwitcherSpanCount() {
+        boolean isTablet = isTablet();
+        boolean isLandscape = getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+
+        if (isTablet) {
+            return isLandscape ? 4 : 3;
+        } else {
+            return isLandscape ? 3 : 2;
+        }
+    }
+
+    private boolean isTablet() {
+        return getResources().getConfiguration().smallestScreenWidthDp >= 600;
+    }
+
+    private String getSearchBaseUrl() {
+        int index = sharedPreferences.getInt(SEARCH_ENGINE_KEY, 0);
+        return SearchEngineManager.getSearchBaseUrl(index);
     }
 
     /**
@@ -1249,6 +1289,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         }
     }
 
+    @Override
+    public void onTabLongClick(int position) {
+        onSiteLongClick(position);
+    }
+
     private boolean isUrlShared(String url, int excludePosition) {
         for (int idx = 0; idx < siteList.size(); idx++) {
             if (idx != excludePosition && siteList.get(idx).equals(url)) {
@@ -1264,7 +1309,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
      */
     private float getHiddenTranslation() {
         int handleHeight = (handleTouchArea != null && handleTouchArea.getHeight() > 0)
-                ? handleTouchArea.getHeight() : dpToPx(40);
+                ? handleTouchArea.getHeight() : UIUtils.dpToPx(this, 40);
         // Slide down the entire height of the container except for the handle area
         // We no longer subtract bottomPadding to ensure no gap is left at the bottom
         return (float) (bottomUiContainer.getHeight() - handleHeight);
@@ -1288,11 +1333,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         isAnimatingToolbar = true;
         View spacer = findViewById(R.id.hideModeSpacer);
         int startHeight = spacer != null ? spacer.getHeight() : 0;
-        int endHeight = show ? 0 : dpToPx(70);
+        int endHeight = show ? 0 : UIUtils.dpToPx(this, 70);
 
         // Prepare layout transition for height change
         AutoTransition transition = new AutoTransition();
-        transition.setDuration(300);
+        transition.setDuration(ANIM_DURATION);
         TransitionManager.beginDelayedTransition(bottomUiContainer, transition);
 
         // Change height (will be animated by TransitionManager)
@@ -1305,14 +1350,14 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         int currentContainerHeight = bottomUiContainer.getHeight();
         int targetContainerHeight = currentContainerHeight - startHeight + endHeight;
         int handleHeight = (handleTouchArea != null && handleTouchArea.getHeight() > 0)
-                ? handleTouchArea.getHeight() : dpToPx(40);
+                ? handleTouchArea.getHeight() : UIUtils.dpToPx(this, 40);
         int bottomPadding = bottomUiContainer.getPaddingBottom();
         float targetTranslation = show ? 0 : (targetContainerHeight - handleHeight - bottomPadding);
 
         // Animate container translation (synced with height animation)
         bottomUiContainer.animate()
                 .translationY(targetTranslation)
-                .setDuration(300)
+                .setDuration(ANIM_DURATION)
                 .withEndAction(() -> isAnimatingToolbar = false)
                 .start();
     }
@@ -1450,12 +1495,12 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         View link5 = quickAccessMessagesView.findViewById(R.id.cardGmail);
         View link6 = quickAccessMessagesView.findViewById(R.id.cardWhatsApp);
 
-        setClickAnimation(link1);
-        setClickAnimation(link2);
-        setClickAnimation(link3);
-        setClickAnimation(link4);
-        setClickAnimation(link5);
-        setClickAnimation(link6);
+        UIUtils.setClickAnimation(this, link1);
+        UIUtils.setClickAnimation(this, link2);
+        UIUtils.setClickAnimation(this, link3);
+        UIUtils.setClickAnimation(this, link4);
+        UIUtils.setClickAnimation(this, link5);
+        UIUtils.setClickAnimation(this, link6);
 
         link1.setOnClickListener(v -> launchAppOrWeb("com.linkedin.android", "https://www.linkedin.com/messaging/"));
         link2.setOnClickListener(v -> launchAppOrWeb("com.twitter.android", "https://twitter.com/messages"));
@@ -1561,8 +1606,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         Button btnConfirm = dialogView.findViewById(R.id.btnConfirmDelete);
         Button btnCancel = dialogView.findViewById(R.id.btnCancelDelete);
 
-        setClickAnimation(btnConfirm);
-        setClickAnimation(btnCancel);
+        UIUtils.setClickAnimation(this, btnConfirm);
+        UIUtils.setClickAnimation(this, btnCancel);
 
         com.google.android.material.dialog.MaterialAlertDialogBuilder deleteDialogBuilder = new com.google.android.material.dialog.MaterialAlertDialogBuilder(this);
         deleteDialogBuilder.setView(dialogView);
@@ -1620,8 +1665,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         Button btnProceed = dialogView.findViewById(R.id.btnProceedConfirm);
         Button btnCancel = dialogView.findViewById(R.id.btnCancelConfirm);
 
-        setClickAnimation(btnProceed);
-        setClickAnimation(btnCancel);
+        UIUtils.setClickAnimation(this, btnProceed);
+        UIUtils.setClickAnimation(this, btnCancel);
 
         com.google.android.material.dialog.MaterialAlertDialogBuilder confirmDialogBuilder = new com.google.android.material.dialog.MaterialAlertDialogBuilder(this);
         confirmDialogBuilder.setView(dialogView);
@@ -1731,8 +1776,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         tvEmpty.setVisibility(historyList.isEmpty() ? View.VISIBLE : View.GONE);
         rv.setVisibility(historyList.isEmpty() ? View.GONE : View.VISIBLE);
         
-        setClickAnimation(clearAll);
-        setClickAnimation(closeBtn);
+        UIUtils.setClickAnimation(this, clearAll);
+        UIUtils.setClickAnimation(this, closeBtn);
 
         historyAdapter = new HistoryAdapter(historyList, this);
         rv.setLayoutManager(new LinearLayoutManager(this));
@@ -1812,116 +1857,6 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 })
                 .setNegativeButton(R.string.cancel, null)
                 .show();
-    }
-
-    /**
-     * Shows the downloads history dialog.
-     */
-    private void showDownloadsDialog() {
-        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_history, null); 
-        TextView title = dialogView.findViewById(R.id.historyTitle);
-        title.setText(R.string.downloads_title);
-        
-        RecyclerView rv = dialogView.findViewById(R.id.historyRecyclerView);
-        Button clearAll = dialogView.findViewById(R.id.btnClearAllHistory);
-        ImageButton closeBtn = dialogView.findViewById(R.id.btnCloseHistory);
-        TextView tvEmpty = dialogView.findViewById(R.id.tvEmptyMessage);
-
-        tvEmpty.setText(R.string.downloads_empty);
-        setClickAnimation(closeBtn);
-
-        DownloadsAdapter adapter = new DownloadsAdapter(tvEmpty, rv);
-        rv.setLayoutManager(new LinearLayoutManager(this));
-        rv.setAdapter(adapter);
-
-        com.google.android.material.dialog.MaterialAlertDialogBuilder downloadsDialogBuilder = new com.google.android.material.dialog.MaterialAlertDialogBuilder(this);
-        downloadsDialogBuilder.setView(dialogView);
-        downloadsDialog = downloadsDialogBuilder.create();
-
-        if (downloadsDialog.getWindow() != null) {
-            downloadsDialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
-
-        closeBtn.setOnClickListener(v -> {
-            stopDownloadPolling();
-            downloadsDialog.dismiss();
-        });
-        
-        clearAll.setVisibility(View.GONE);
-
-        downloadsDialog.show();
-        
-        if (downloadsDialog.getWindow() != null) {
-            int width = (int) (getResources().getDisplayMetrics().widthPixels * 0.95);
-            downloadsDialog.getWindow().setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT);
-        }
-
-        startDownloadPolling(adapter, tvEmpty, rv);
-    }
-
-    /**
-     * Starts polling the DownloadManager for active downloads.
-     */
-    private void startDownloadPolling(DownloadsAdapter adapter, TextView tvEmpty, RecyclerView rv) {
-        downloadUpdateRunnable = new Runnable() {
-            @Override
-            public void run() {
-                updateDownloadListFromManager(adapter, tvEmpty, rv);
-                downloadUpdateHandler.postDelayed(this, 1000);
-            }
-        };
-        downloadUpdateHandler.post(downloadUpdateRunnable);
-    }
-
-    /**
-     * Stops polling the DownloadManager.
-     */
-    private void stopDownloadPolling() {
-        if (downloadUpdateRunnable != null) {
-            downloadUpdateHandler.removeCallbacks(downloadUpdateRunnable);
-        }
-    }
-
-    /**
-     * Queries the DownloadManager and updates the UI with current download statuses.
-     */
-    @SuppressLint("Range")
-    private void updateDownloadListFromManager(DownloadsAdapter adapter, TextView tvEmpty, RecyclerView rv) {
-        DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
-        DownloadManager.Query query = new DownloadManager.Query();
-        Cursor cursor = dm.query(query);
-
-        List<DownloadItem> items = new ArrayList<>();
-        if (cursor != null && cursor.moveToFirst()) {
-            do {
-                DownloadItem item = new DownloadItem();
-                item.id = cursor.getLong(cursor.getColumnIndex(DownloadManager.COLUMN_ID));
-                item.title = cursor.getString(cursor.getColumnIndex(DownloadManager.COLUMN_TITLE));
-                item.status = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS));
-                item.totalSize = cursor.getLong(cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
-                item.bytesSoFar = cursor.getLong(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
-                item.localUri = cursor.getString(cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI));
-                items.add(item);
-            } while (cursor.moveToNext());
-            cursor.close();
-        }
-        
-        tvEmpty.setVisibility(items.isEmpty() ? View.VISIBLE : View.GONE);
-        rv.setVisibility(items.isEmpty() ? View.GONE : View.VISIBLE);
-        
-        adapter.setItems(items);
-    }
-
-    /**
-     * Model class representing a single download item.
-     */
-    private static class DownloadItem {
-        long id;
-        String title;
-        int status;
-        long totalSize;
-        long bytesSoFar;
-        String localUri;
     }
 
     @Override
@@ -2167,7 +2102,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true);
 
         wv.setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
-            downloadFile(url, mimetype, contentDisposition, userAgent);
+            downloadHandler.downloadFile(url, mimetype, contentDisposition, userAgent);
         });
 
         wv.setOnLongClickListener(v -> {
@@ -2231,16 +2166,26 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, android.os.Message resultMsg) {
                 WebView newWebView = new WebView(MainActivity.this);
                 setupWebView(newWebView);
+
+                boolean originIncognito = false;
+                for (Map.Entry<String, View> entry : tabMap.entrySet()) {
+                    if (entry.getValue() == view && incognitoTabs.contains(entry.getKey())) {
+                        originIncognito = true;
+                        break;
+                    }
+                }
+                final boolean finalIncognito = originIncognito;
+
                 newWebView.setWebViewClient(new WebViewClient() {
                     @Override
                     public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                        handleNewTabUrl(view, url);
+                        handleNewTabUrl(view, url, finalIncognito);
                         return true;
                     }
 
                     @Override
                     public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest request) {
-                        handleNewTabUrl(view, request.getUrl().toString());
+                        handleNewTabUrl(view, request.getUrl().toString(), finalIncognito);
                         return true;
                     }
                 });
@@ -2305,13 +2250,19 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         return true; // We handled it (even if it failed to launch) to prevent WebView error
     }
 
-    private void handleNewTabUrl(WebView view, String url) {
+    private void handleNewTabUrl(WebView view, String url, boolean isIncognito) {
         if (handleExternalScheme(view, url)) {
             return;
         }
+
         if (!siteList.contains(url)) {
             int insertPos = currentPosition + 1;
             siteList.add(insertPos, url);
+            if (isIncognito) {
+                incognitoTabs.add(url);
+                sitesAdapter.setIncognitoTabs(incognitoTabs);
+                tabSwitcherAdapter.setIncognitoTabs(incognitoTabs);
+            }
             saveSites();
             updateTabCountDisplay();
             sitesAdapter.notifyItemInserted(insertPos);
@@ -2332,7 +2283,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                         getString(R.string.option_add_to_post_creator)
                 }, (dialog, which) -> {
                     if (which == 0) {
-                        downloadFile(imageUrl, null, null, userAgent);
+                        downloadHandler.downloadFile(imageUrl, null, null, userAgent);
                     } else if (which == 1) {
                         Intent shareIntent = new Intent(Intent.ACTION_SEND);
                         shareIntent.setType("text/plain");
@@ -2350,27 +2301,6 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     /**
      * Initiates a file download using DownloadManager.
      */
-    private void downloadFile(String url, String mimetype, String contentDisposition, String userAgent) {
-        DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
-        if (mimetype != null) {
-            request.setMimeType(mimetype);
-        }
-        String cookies = CookieManager.getInstance().getCookie(url);
-        request.addRequestHeader("cookie", cookies);
-        request.addRequestHeader("User-Agent", userAgent);
-        request.setDescription("Downloading file...");
-        request.setTitle(URLUtil.guessFileName(url, contentDisposition, mimetype));
-        request.allowScanningByMediaScanner();
-        request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-        request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, URLUtil.guessFileName(url, contentDisposition, mimetype));
-        
-        DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
-        dm.enqueue(request);
-        Toast.makeText(getApplicationContext(), "Downloading File", Toast.LENGTH_LONG).show();
-        
-        showDownloadsDialog();
-    }
-
     /**
      * Creates and initializes a new WebView instance for a given URL.
      * @param url The URL to load in the new WebView.
@@ -2384,6 +2314,16 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 ViewGroup.LayoutParams.MATCH_PARENT));
         
         wv.setWebViewClient(new WebViewClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                if (sharedPreferences.getBoolean(AD_BLOCKER_KEY, false)) {
+                    if (AdBlockerHosts.shouldBlock(request.getUrl())) {
+                        return new WebResourceResponse("text/plain", "utf-8", new ByteArrayInputStream("".getBytes()));
+                    }
+                }
+                return super.shouldInterceptRequest(view, request);
+            }
+
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
                 return handleExternalScheme(view, url);
@@ -2613,97 +2553,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
 
     private void showMediaGrabberDialog() {
-        if (detectedMediaUrls.isEmpty()) {
-            Toast.makeText(this, "No media found on this page.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        List<String> urls = new ArrayList<>(detectedMediaUrls);
-        
-        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_history, null);
-        TextView title = dialogView.findViewById(R.id.historyTitle);
-        title.setText("Media Found on Page");
-        
-        RecyclerView rv = dialogView.findViewById(R.id.historyRecyclerView);
-        Button downloadAll = dialogView.findViewById(R.id.btnClearAllHistory);
-        ImageButton closeBtn = dialogView.findViewById(R.id.btnCloseHistory);
-        TextView tvEmpty = dialogView.findViewById(R.id.tvEmptyMessage);
-
-        tvEmpty.setVisibility(View.GONE);
-        downloadAll.setText("Download All");
-        downloadAll.setVisibility(View.VISIBLE);
-        setClickAnimation(closeBtn);
-        setClickAnimation(downloadAll);
-
-        class MediaGrabberAdapter extends RecyclerView.Adapter<MediaGrabberAdapter.ViewHolder> {
-            @NonNull
-            @Override
-            public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-                View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_grab_media, parent, false);
-                return new ViewHolder(v);
-            }
-
-            @Override
-            public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
-                String url = urls.get(position);
-                String ext = MimeTypeMap.getFileExtensionFromUrl(url);
-                String domain = getDomain(url);
-                
-                holder.name.setText("Media " + (position + 1) + " (" + domain + ")");
-                holder.extension.setText(ext.isEmpty() ? "unknown" : ext.toUpperCase());
-
-                com.bumptech.glide.Glide.with(MainActivity.this)
-                        .load(url)
-                        .centerCrop()
-                        .placeholder(android.R.drawable.ic_menu_gallery)
-                        .error(android.R.drawable.ic_menu_report_image)
-                        .into(holder.preview);
-
-                holder.itemView.setOnClickListener(v -> {
-                    downloadFile(url, null, null, userAgent);
-                });
-            }
-
-            @Override
-            public int getItemCount() { return urls.size(); }
-
-            class ViewHolder extends RecyclerView.ViewHolder {
-                ImageView preview;
-                TextView name, extension;
-                ViewHolder(View v) {
-                    super(v);
-                    preview = v.findViewById(R.id.ivMediaPreview);
-                    name = v.findViewById(R.id.tvMediaName);
-                    extension = v.findViewById(R.id.tvMediaExtension);
-                }
-            }
-        }
-
-        rv.setLayoutManager(new LinearLayoutManager(this));
-        rv.setAdapter(new MediaGrabberAdapter());
-
-        com.google.android.material.dialog.MaterialAlertDialogBuilder builder = new com.google.android.material.dialog.MaterialAlertDialogBuilder(this);
-        builder.setView(dialogView);
-        AlertDialog dialog = builder.create();
-
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
-
-        closeBtn.setOnClickListener(v -> dialog.dismiss());
-        downloadAll.setOnClickListener(v -> {
-            for (String url : urls) {
-                downloadFile(url, null, null, userAgent);
-            }
-            dialog.dismiss();
-        });
-
-        dialog.show();
-        
-        if (dialog.getWindow() != null) {
-            int width = (int) (getResources().getDisplayMetrics().widthPixels * 0.95);
-            dialog.getWindow().setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT);
-        }
+        mediaHandler.showMediaGrabberDialog(detectedMediaUrls);
     }
 
     /**
@@ -2829,7 +2679,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
      */
     private void performGlobalSearch(String query, Set<String> urls) {
         for (String url : urls) {
-            String searchUrl = getSearchUrl(url, query);
+            String searchUrl = SearchEngineManager.getFormattedSearchUrl(url, query);
             
             View tabView = tabMap.get(url);
             
@@ -2854,6 +2704,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 ((WebView) tabView).loadUrl(searchUrl);
             }
         }
+        
 
         Toast.makeText(this, "Global search success", Toast.LENGTH_SHORT).show();
     }
@@ -2992,11 +2843,6 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         WebStorage.getInstance().deleteAllData();
     }
 
-    private int dpToPx(int dp) {
-        float density = getResources().getDisplayMetrics().density;
-        return Math.round((float) dp * density);
-    }
-
     /**
      * Updates the tab switcher panel height to fit the screen while keeping bottom bar and handle visible.
      */
@@ -3027,9 +2873,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             int availableHeight = totalHeight - mainViewTopPadding - mainViewBottomPadding;
 
             // Subtract bottom bar, visible panels, container padding, and a small visual buffer
-            int targetHeight = availableHeight - bHeight - cHeight - bottomUiPadding - dpToPx(40);
+            int targetHeight = availableHeight - bHeight - cHeight - bottomUiPadding - UIUtils.dpToPx(this, 40);
 
-            if (targetHeight < dpToPx(150)) targetHeight = dpToPx(150);
+            if (targetHeight < UIUtils.dpToPx(this, 150)) targetHeight = UIUtils.dpToPx(this, 150);
 
             ViewGroup.LayoutParams params = tabSwitcherPanel.getLayoutParams();
             if (params != null) {
@@ -3037,34 +2883,6 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 tabSwitcherPanel.setLayoutParams(params);
             }
         });
-    }
-
-    /**
-     * Generates a platform-specific search URL for a given query.
-     */
-    private String getSearchUrl(String baseUrl, String query) {
-        if (baseUrl.contains("google.com")) return "https://www.google.com/search?q=" + query;
-        if (baseUrl.contains("yandex.com")) return "https://yandex.com/search/?text=" + query;
-        if (baseUrl.contains("twitter.com") || baseUrl.contains("x.com")) return "https://twitter.com/search?q=" + query;
-        if (baseUrl.contains("facebook.com")) return "https://www.facebook.com/search/top/?q=" + query;
-        if (baseUrl.contains("instagram.com")) return "https://www.instagram.com/explore/search/keyword/?q=" + query;
-        if (baseUrl.contains("youtube.com")) return "https://www.youtube.com/results?search_query=" + query;
-        if (baseUrl.contains("bing.com")) return "https://www.bing.com/search?q=" + query;
-        if (baseUrl.contains("duckduckgo.com")) return "https://duckduckgo.com/?q=" + query;
-        if (baseUrl.contains("yahoo.com")) return "https://search.yahoo.com/search?p=" + query;
-        if (baseUrl.contains("baidu.com")) return "https://www.baidu.com/s?wd=" + query;
-        if (baseUrl.contains("reddit.com")) return "https://www.reddit.com/search/?q=" + query;
-        if (baseUrl.contains("amazon.com")) return "https://www.amazon.com/s?k=" + query;
-        if (baseUrl.contains("ebay.com")) return "https://www.ebay.com/sch/i.html?_nkw=" + query;
-        if (baseUrl.contains("wikipedia.org")) return "https://en.wikipedia.org/wiki/Special:Search?search=" + query;
-        if (baseUrl.contains("github.com")) return "https://github.com/search?q=" + query;
-        if (baseUrl.contains("stackoverflow.com")) return "https://stackoverflow.com/search?q=" + query;
-        if (baseUrl.contains("linkedin.com")) return "https://www.linkedin.com/search/results/all/?keywords=" + query;
-        if (baseUrl.contains("pinterest.com")) return "https://www.pinterest.com/search/pins/?q=" + query;
-        if (baseUrl.contains("tiktok.com")) return "https://www.tiktok.com/search?q=" + query;
-        if (baseUrl.contains("brave.com")) return "https://search.brave.com/search?q=" + query;
-        if (baseUrl.contains("ecosia.org")) return "https://www.ecosia.org/search?q=" + query;
-        return baseUrl + "/search?q=" + query;
     }
 
     /**
@@ -3205,7 +3023,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         input.setHintTextColor(getResources().getColor(R.color.secondary_text));
         
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(dpToPx(20), 0, dpToPx(20), dpToPx(20));
+        lp.setMargins(UIUtils.dpToPx(this, 20), 0, UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20));
         input.setLayoutParams(lp);
         container.addView(input, 1);
 
@@ -3216,11 +3034,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         btnClear.setText("Clear");
         btnClear.setTextSize(12);
         btnClear.setAllCaps(false);
-        btnClear.setCornerRadius(dpToPx(8));
-        btnClear.setPadding(dpToPx(12), 0, dpToPx(12), 0);
+        btnClear.setCornerRadius(UIUtils.dpToPx(this, 8));
+        btnClear.setPadding(UIUtils.dpToPx(this, 12), 0, UIUtils.dpToPx(this, 12), 0);
         btnClear.setMinWidth(0);
         btnClear.setMinimumWidth(0);
-        btnClear.setHeight(dpToPx(36));
+        btnClear.setHeight(UIUtils.dpToPx(this, 36));
         
         // Use explicit colors from the theme for maximum contrast in both modes
         int contrastBg = getResources().getColor(R.color.button_background);
@@ -3242,7 +3060,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         titleWrapper.addView(title);
         
         // Add clear button to the wrapper
-        RelativeLayout.LayoutParams clearLp = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dpToPx(36));
+        RelativeLayout.LayoutParams clearLp = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, UIUtils.dpToPx(this, 36));
         clearLp.addRule(RelativeLayout.ALIGN_PARENT_END);
         clearLp.addRule(RelativeLayout.CENTER_VERTICAL);
         btnClear.setLayoutParams(clearLp);
@@ -3251,9 +3069,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         // Add the wrapper back to the container at the top
         container.addView(titleWrapper, 0);
 
-        setClickAnimation(btnFind);
-        setClickAnimation(btnCancel);
-        setClickAnimation(btnClear);
+        UIUtils.setClickAnimation(this, btnFind);
+        UIUtils.setClickAnimation(this, btnCancel);
+        UIUtils.setClickAnimation(this, btnClear);
 
         com.google.android.material.dialog.MaterialAlertDialogBuilder builder = new com.google.android.material.dialog.MaterialAlertDialogBuilder(this);
         builder.setView(dialogView);
@@ -3299,42 +3117,31 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         dialog.show();
     }
 
-    private void showQRCodeDialog() {
-        if (currentUrl == null || currentUrl.startsWith("home://")) {
-            Toast.makeText(this, "Cannot share this page", Toast.LENGTH_SHORT).show();
-            return;
+    @Override
+    public void onConfigurationChanged(@NonNull android.content.res.Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+
+        // Update Tab Switcher layout based on new orientation
+        if (tabSwitcherRecyclerView != null) {
+            tabSwitcherRecyclerView.setLayoutManager(new GridLayoutManager(this, getTabSwitcherSpanCount()));
         }
 
-        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_caution, null);
-        TextView title = dialogView.findViewById(R.id.confirmTitle);
-        TextView message = dialogView.findViewById(R.id.confirmMessage);
-        Button btnClose = dialogView.findViewById(R.id.btnProceedConfirm);
-        Button btnCancel = dialogView.findViewById(R.id.btnCancelConfirm);
+        if (newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && !isTablet()) {
+            boolean panelsToHide = (tabSwitcherPanel != null && tabSwitcherPanel.getVisibility() == View.VISIBLE) ||
+                                  (moreOptionsPanel != null && moreOptionsPanel.getVisibility() == View.VISIBLE) ||
+                                  (searchPanel != null && searchPanel.getVisibility() == View.VISIBLE);
+            
+            if (panelsToHide) {
+                beginPanelTransition();
+                if (tabSwitcherPanel != null) tabSwitcherPanel.setVisibility(View.GONE);
+                if (moreOptionsPanel != null) moreOptionsPanel.setVisibility(View.GONE);
+                if (searchPanel != null) searchPanel.setVisibility(View.GONE);
 
-        title.setText(R.string.qr_title);
-        message.setVisibility(View.GONE);
-        btnCancel.setVisibility(View.GONE);
-        btnClose.setText("Close");
-
-        LinearLayout container = dialogView.findViewById(R.id.dialogContainer);
-        ImageView qrView = new ImageView(this);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dpToPx(250), dpToPx(250));
-        lp.gravity = Gravity.CENTER;
-        lp.setMargins(0, dpToPx(20), 0, dpToPx(20));
-        qrView.setLayoutParams(lp);
-
-        String qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=" + Uri.encode(currentUrl);
-        com.bumptech.glide.Glide.with(this).load(qrUrl).into(qrView);
-        
-        container.addView(qrView, 1);
-
-        com.google.android.material.dialog.MaterialAlertDialogBuilder builder = new com.google.android.material.dialog.MaterialAlertDialogBuilder(this);
-        builder.setView(dialogView);
-        AlertDialog dialog = builder.create();
-        if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-
-        btnClose.setOnClickListener(v -> dialog.dismiss());
-        dialog.show();
+                boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
+                if (advancedAnim && handleTouchArea != null) handleTouchArea.setVisibility(View.VISIBLE);
+                updateDragHandleState();
+            }
+        }
     }
 
     @Override
@@ -3391,118 +3198,4 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         super.onDestroy();
     }
 
-    /**
-     * Adapter for displaying download items in a RecyclerView.
-     */
-    private class DownloadsAdapter extends RecyclerView.Adapter<DownloadsAdapter.ViewHolder> {
-        private List<DownloadItem> items = new ArrayList<>();
-        private final TextView tvEmpty;
-        private final RecyclerView rv;
-
-        public DownloadsAdapter(TextView tvEmpty, RecyclerView rv) {
-            this.tvEmpty = tvEmpty;
-            this.rv = rv;
-        }
-
-        @SuppressLint("NotifyDataSetChanged")
-        public void setItems(List<DownloadItem> newItems) {
-            this.items = newItems;
-            notifyDataSetChanged();
-        }
-
-        @NonNull
-        @Override
-        public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_download, parent, false);
-            return new ViewHolder(view);
-        }
-
-        @Override
-        public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
-            DownloadItem item = items.get(position);
-            holder.fileName.setText(item.title != null ? item.title : "Download");
-            
-            if (item.status == DownloadManager.STATUS_RUNNING) {
-                holder.progressBar.setVisibility(View.VISIBLE);
-                if (item.totalSize > 0) {
-                    int progress = (int) ((item.bytesSoFar * 100) / item.totalSize);
-                    holder.progressBar.setProgress(progress);
-                    holder.fileDetails.setText("Downloading... " + progress + "%");
-                } else {
-                    holder.progressBar.setIndeterminate(true);
-                    holder.fileDetails.setText("Downloading...");
-                }
-            } else {
-                holder.progressBar.setVisibility(View.GONE);
-                if (item.status == DownloadManager.STATUS_SUCCESSFUL) {
-                    holder.fileDetails.setText("Completed (" + (item.totalSize / 1024) + " KB)");
-                } else if (item.status == DownloadManager.STATUS_FAILED) {
-                    holder.fileDetails.setText("Download Failed");
-                } else {
-                    holder.fileDetails.setText("Status: Queued");
-                }
-            }
-
-            holder.itemView.setOnClickListener(v -> {
-                if (item.status != DownloadManager.STATUS_SUCCESSFUL || item.localUri == null) return;
-                try {
-                    File file = new File(Uri.parse(item.localUri).getPath());
-                    Uri contentUri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".provider", file);
-                    Intent intent = new Intent(Intent.ACTION_VIEW);
-                    
-                    String extension = MimeTypeMap.getFileExtensionFromUrl(contentUri.toString());
-                    String mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase());
-                    if (mimeType == null) mimeType = "*/*";
-                    
-                    intent.setDataAndType(contentUri, mimeType);
-                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    startActivity(intent);
-                } catch (Exception e) {
-                    Toast.makeText(MainActivity.this, "Cannot open file", Toast.LENGTH_SHORT).show();
-                }
-            });
-
-            holder.btnOptions.setOnClickListener(v -> {
-                androidx.appcompat.view.ContextThemeWrapper wrapper = new androidx.appcompat.view.ContextThemeWrapper(MainActivity.this, R.style.PopupMenuTheme);
-                androidx.appcompat.widget.PopupMenu popup = new androidx.appcompat.widget.PopupMenu(wrapper, v);
-                popup.getMenu().add(R.string.dialog_delete_file);
-                popup.setOnMenuItemClickListener(menuItem -> {
-                    if (menuItem.getTitle() != null && menuItem.getTitle().toString().equals(getString(R.string.dialog_delete_file))) {
-                        new com.google.android.material.dialog.MaterialAlertDialogBuilder(MainActivity.this)
-                            .setTitle(R.string.dialog_remove_download_title)
-                            .setMessage(getString(R.string.dialog_remove_download_message, item.title))
-                            .setPositiveButton(R.string.delete, (dialog, which) -> {
-                                DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
-                                dm.remove(item.id);
-                                updateDownloadListFromManager(this, tvEmpty, rv);
-                            })
-                            .setNegativeButton(R.string.cancel, null)
-                            .show();
-                        return true;
-                    }
-                    return false;
-                });
-                popup.show();
-            });
-        }
-
-        @Override
-        public int getItemCount() {
-            return items.size();
-        }
-
-        class ViewHolder extends RecyclerView.ViewHolder {
-            TextView fileName, fileDetails;
-            ImageButton btnOptions;
-            ProgressBar progressBar;
-
-            ViewHolder(View itemView) {
-                super(itemView);
-                fileName = itemView.findViewById(R.id.tvFileName);
-                fileDetails = itemView.findViewById(R.id.tvFileDetails);
-                btnOptions = itemView.findViewById(R.id.btnDownloadOptions);
-                progressBar = itemView.findViewById(R.id.pbDownload);
-            }
-        }
-    }
 }

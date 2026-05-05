@@ -12,11 +12,14 @@ import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.util.Log;
 import android.view.animation.AnimationUtils;
 import android.webkit.MimeTypeMap;
 import android.widget.Button;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.activity.EdgeToEdge;
@@ -49,12 +52,14 @@ public class PostComposerActivity extends AppCompatActivity {
     private RecyclerView rvMediaPreviews, rvDrafts;
     private MediaPreviewAdapter mediaAdapter;
     private DraftAdapter draftAdapter;
+    private FirestoreManager firestoreManager;
     private List<Uri> selectedMediaUris = new ArrayList<>();
     private List<JSONObject> drafts = new ArrayList<>();
     private TextView tvDraftsTitle, tvMediaPlaceholder, tvDraftsPlaceholder;
     private static final String KEY_SELECTED_MEDIA = "selected_media_uris";
     private static final String PREFS_NAME = "PostDraftsPrefs";
     private static final String KEY_DRAFTS = "saved_drafts";
+    private static final int MAX_DRAFTS = 15;
 
     // Using the modern Photo Picker for best compatibility and user experience
     private final ActivityResultLauncher<PickVisualMediaRequest> pickMediaLauncher = registerForActivityResult(
@@ -120,6 +125,8 @@ public class PostComposerActivity extends AppCompatActivity {
         ExtendedFloatingActionButton fabPost = findViewById(R.id.fabPost);
 
         setClickAnimations(btnClose, btnClearAll, btnAddMedia, btnSaveDraft, fabPost);
+
+        firestoreManager = new FirestoreManager();
 
         mediaAdapter = new MediaPreviewAdapter(selectedMediaUris);
         rvMediaPreviews.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false));
@@ -293,6 +300,11 @@ public class PostComposerActivity extends AppCompatActivity {
             return;
         }
 
+        if (drafts.size() >= MAX_DRAFTS) {
+            Toast.makeText(this, R.string.max_drafts_limit, Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         try {
             JSONObject draft = new JSONObject();
             draft.put("text", content);
@@ -320,11 +332,22 @@ public class PostComposerActivity extends AppCompatActivity {
                 .edit()
                 .putString(KEY_DRAFTS, array.toString())
                 .apply();
+
+        if (firestoreManager != null) {
+            List<String> texts = new ArrayList<>();
+            for (JSONObject d : drafts) {
+                String t = d.optString("text");
+                if (t != null && !t.isEmpty()) {
+                    texts.add(t);
+                }
+            }
+            firestoreManager.savePostDrafts(texts);
+        }
     }
 
     private void loadDrafts() {
         String json = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_DRAFTS, null);
-        if (json != null) {
+        if (json != null && !json.equals("[]")) {
             try {
                 JSONArray array = new JSONArray(json);
                 drafts.clear();
@@ -335,6 +358,31 @@ public class PostComposerActivity extends AppCompatActivity {
             } catch (JSONException e) {
                 e.printStackTrace();
             }
+        } else if (firestoreManager != null) {
+            // Try to pull from cloud if local is empty
+            firestoreManager.loadUserData(new FirestoreManager.OnDataLoadedListener() {
+                @Override public void onDataLoaded(List<String> t, List<String> b, List<String> h) {}
+                @Override
+                public void onPostDraftsLoaded(List<String> cloudDrafts) {
+                    if (cloudDrafts != null && !cloudDrafts.isEmpty()) {
+                        drafts.clear();
+                        for (String text : cloudDrafts) {
+                            try {
+                                JSONObject d = new JSONObject();
+                                d.put("text", text);
+                                d.put("media", new JSONArray());
+                                d.put("timestamp", System.currentTimeMillis());
+                                drafts.add(d);
+                            } catch (JSONException e) { e.printStackTrace(); }
+                        }
+                        runOnUiThread(() -> {
+                            draftAdapter.notifyDataSetChanged();
+                            updateDraftsVisibility();
+                        });
+                    }
+                }
+                @Override public void onError(Exception e) { Log.e("PostComposer", "Cloud draft load error", e); }
+            });
         }
         updateDraftsVisibility();
     }
@@ -486,18 +534,48 @@ public class PostComposerActivity extends AppCompatActivity {
             holder.ivMediaIcon.setVisibility(mediaCount > 0 ? View.VISIBLE : View.GONE);
             holder.tvMediaCount.setVisibility(mediaCount > 0 ? View.VISIBLE : View.GONE);
 
+            holder.imagesContainer.removeAllViews();
+            if (mediaCount > 0) {
+                holder.imagesScroll.setVisibility(View.VISIBLE);
+                for (int i = 0; i < Math.min(mediaCount, 5); i++) {
+                    try {
+                        String uriStr = media.getString(i);
+                        ImageView iv = new ImageView(holder.itemView.getContext());
+                        android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(dpToPx(40, holder.itemView), dpToPx(40, holder.itemView));
+                        lp.setMargins(0, 0, dpToPx(4, holder.itemView), 0);
+                        iv.setLayoutParams(lp);
+                        iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                        
+                        // Load image with rounded corners
+                        com.bumptech.glide.Glide.with(holder.itemView.getContext())
+                            .load(uriStr)
+                            .transform(new com.bumptech.glide.load.resource.bitmap.CenterCrop(), 
+                                       new com.bumptech.glide.load.resource.bitmap.RoundedCorners(dpToPx(4, holder.itemView)))
+                            .into(iv);
+                        
+                        holder.imagesContainer.addView(iv);
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+                }
+            } else {
+                holder.imagesScroll.setVisibility(View.GONE);
+            }
+
             setClickAnimations(holder.itemView, holder.btnDelete);
 
             holder.itemView.setOnClickListener(v -> useDraft(draft));
             holder.btnDelete.setOnClickListener(v -> {
                 int pos = holder.getAdapterPosition();
                 if (pos != RecyclerView.NO_POSITION) {
-                    items.remove(pos);
-                    saveDraftsToPrefs();
-                    notifyItemRemoved(pos);
-                    updateDraftsVisibility();
+                    showDeleteDraftConfirmDialog(pos);
                 }
             });
+        }
+
+        private int dpToPx(int dp, View itemView) {
+            float density = itemView.getContext().getResources().getDisplayMetrics().density;
+            return Math.round((float) dp * density);
         }
 
         @Override
@@ -507,14 +585,53 @@ public class PostComposerActivity extends AppCompatActivity {
             TextView tvContent, tvMediaCount;
             ImageView ivMediaIcon;
             ImageButton btnDelete;
+            android.widget.LinearLayout imagesContainer;
+            android.view.View imagesScroll;
             ViewHolder(@NonNull View itemView) {
                 super(itemView);
                 tvContent = itemView.findViewById(R.id.tvDraftContent);
                 tvMediaCount = itemView.findViewById(R.id.tvMediaCount);
                 ivMediaIcon = itemView.findViewById(R.id.ivMediaIcon);
                 btnDelete = itemView.findViewById(R.id.btnDeleteDraft);
+                imagesContainer = itemView.findViewById(R.id.draftImagesContainer);
+                imagesScroll = itemView.findViewById(R.id.draftImagesScroll);
             }
         }
+    }
+
+    private void showDeleteDraftConfirmDialog(int position) {
+        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_caution, null);
+        TextView dTitle = dialogView.findViewById(R.id.confirmTitle);
+        TextView dMessage = dialogView.findViewById(R.id.confirmMessage);
+        Button dBtnConfirm = dialogView.findViewById(R.id.btnProceedConfirm);
+        Button dBtnCancel = dialogView.findViewById(R.id.btnCancelConfirm);
+
+        dTitle.setText(R.string.delete_draft_title);
+        dMessage.setText(R.string.delete_draft_message);
+        dBtnConfirm.setText(R.string.delete);
+        dBtnConfirm.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#FF5252")));
+
+        setClickAnimations(dBtnConfirm, dBtnCancel);
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder builder = new com.google.android.material.dialog.MaterialAlertDialogBuilder(this);
+        builder.setView(dialogView);
+        AlertDialog deleteDialog = builder.create();
+
+        if (deleteDialog.getWindow() != null) {
+            deleteDialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
+
+        dBtnConfirm.setOnClickListener(v -> {
+            deleteDialog.dismiss();
+            drafts.remove(position);
+            saveDraftsToPrefs();
+            draftAdapter.notifyItemRemoved(position);
+            updateDraftsVisibility();
+            Toast.makeText(this, R.string.draft_deleted, Toast.LENGTH_SHORT).show();
+        });
+
+        dBtnCancel.setOnClickListener(v -> deleteDialog.dismiss());
+        deleteDialog.show();
     }
 
     private class MediaPreviewAdapter extends RecyclerView.Adapter<MediaPreviewAdapter.ViewHolder> {

@@ -11,6 +11,7 @@
     <color name="search_results_background">#F0F0F0</color>
     <color name="primary_text">#000000</color>
     <color name="secondary_text">#666666</color>
+    <color name="bottom_bar">#FFFFFF</color>
 
     <color name="selected_tab_stroke">#FF000000</color>
     <color name="selected_tab_glow">#4D000000</color>

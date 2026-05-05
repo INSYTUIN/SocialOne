@@ -105,7 +105,7 @@
                 android:layout_height="wrap_content"
                 android:gravity="center"
                 android:paddingHorizontal="16dp"
-                android:text="Signing in syncs your history, tabs, and bookmarks to your account. Passwords and sessions are never synced for your security."
+                android:text="Signing in syncs your history, tabs, bookmarks and post drafts to your account. Passwords and sessions are never synced for your security."
                 android:textColor="@color/secondary_text"
                 android:textSize="12sp" />
 

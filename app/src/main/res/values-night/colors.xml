@@ -3,12 +3,13 @@
     <color name="icon_tint">#FFFFFFFF</color>
     <color name="button_background">#FFFFFFFF</color>
     <color name="button_text">#FF000000</color>
-    <color name="panel_background">#E61E1E1E</color>
+    <color name="panel_background">#121212</color>
 
     <color name="home_background">#121212</color>
     <color name="search_results_background">#1E1E1E</color>
     <color name="primary_text">#FFFFFF</color>
     <color name="secondary_text">#B0B0B0</color>
+    <color name="bottom_bar">#1a1a1c</color>
 
     <color name="selected_tab_stroke">#FFFFFFFF</color>
     <color name="selected_tab_glow">#4DFFFFFF</color>

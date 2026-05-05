@@ -22,12 +22,14 @@ public class FirestoreManager {
     private static final String KEY_TABS = "tabs";
     private static final String KEY_BOOKMARKS = "bookmarks";
     private static final String KEY_HISTORY = "history";
+    private static final String KEY_POST_DRAFTS = "post_drafts";
 
     private final FirebaseFirestore db;
     private final FirebaseAuth auth;
 
     public interface OnDataLoadedListener {
         void onDataLoaded(List<String> tabs, List<String> bookmarks, List<String> history);
+        default void onPostDraftsLoaded(List<String> drafts) {}
         void onError(Exception e);
     }
 
@@ -91,6 +93,23 @@ public class FirestoreManager {
     }
 
     /**
+     * Saves the current list of post drafts to Firestore for the authenticated user.
+     * Only saves the text content, as requested.
+     */
+    public void savePostDrafts(List<String> draftTexts) {
+        FirebaseUser user = auth.getCurrentUser();
+        if (user == null) return;
+
+        Map<String, Object> data = new HashMap<>();
+        data.put(KEY_POST_DRAFTS, draftTexts);
+
+        db.collection(COLLECTION_USERS).document(user.getUid())
+                .set(data, SetOptions.merge())
+                .addOnSuccessListener(aVoid -> Log.d(TAG, "Post drafts successfully synced to cloud"))
+                .addOnFailureListener(e -> Log.e(TAG, "Error syncing post drafts", e));
+    }
+
+    /**
      * Loads user data from Firestore and triggers the callback with results.
      */
     @SuppressWarnings("unchecked")
@@ -108,7 +127,12 @@ public class FirestoreManager {
                         List<String> tabs = (List<String>) documentSnapshot.get(KEY_TABS);
                         List<String> bookmarks = (List<String>) documentSnapshot.get(KEY_BOOKMARKS);
                         List<String> history = (List<String>) documentSnapshot.get(KEY_HISTORY);
+                        List<String> postDrafts = (List<String>) documentSnapshot.get(KEY_POST_DRAFTS);
+                        
                         listener.onDataLoaded(tabs, bookmarks, history);
+                        if (postDrafts != null) {
+                            listener.onPostDraftsLoaded(postDrafts);
+                        }
                     } else {
                         listener.onDataLoaded(null, null, null);
                     }

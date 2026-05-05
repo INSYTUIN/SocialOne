@@ -101,4 +101,14 @@
     <string name="find_hint">Search text on page...</string>
     <string name="no_results">No results found</string>
     <string name="qr_title">Scan QR Code</string>
+    <string name="ad_blocker_title">Ad Blocker</string>
+    <string name="ad_blocker_desc">Block intrusive ads and trackers for a faster browsing experience.</string>
+    <string name="max_drafts_limit">Max drafts limit reached (15)</string>
+    <string name="draft_saved">Draft saved and synced</string>
+    <string name="draft_deleted">Draft deleted</string>
+    <string name="delete_draft_title">Delete Draft?</string>
+    <string name="delete_draft_message">This will permanently remove this draft. This cannot be undone.</string>
+    <string name="google_account_title">Google Account</string>
+    <string name="not_signed_in">Not signed in</string>
+    <string name="manage_google_account">Manage Google Account</string>
 </resources>

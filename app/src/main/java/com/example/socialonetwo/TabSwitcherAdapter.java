@@ -48,6 +48,12 @@ public class TabSwitcherAdapter extends RecyclerView.Adapter<TabSwitcherAdapter.
          * @param position The position of the tab to be closed.
          */
         void onTabClose(int position);
+
+        /**
+         * Called when a tab preview is long-clicked.
+         * @param position The position of the long-clicked tab.
+         */
+        void onTabLongClick(int position);
     }
 
     /**
@@ -142,6 +148,10 @@ public class TabSwitcherAdapter extends RecyclerView.Adapter<TabSwitcherAdapter.
 
         holder.itemView.setOnClickListener(v -> listener.onTabClick(holder.getAdapterPosition()));
         holder.btnClose.setOnClickListener(v -> listener.onTabClose(holder.getAdapterPosition()));
+        holder.itemView.setOnLongClickListener(v -> {
+            listener.onTabLongClick(holder.getAdapterPosition());
+            return true;
+        });
     }
 
     @Override
