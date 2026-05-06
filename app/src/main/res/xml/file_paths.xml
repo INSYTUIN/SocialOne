@@ -2,4 +2,5 @@
 <paths>
     <external-path name="external_files" path="." />
     <external-public-path name="downloads" path="Download" />
+    <files-path name="draft_media" path="drafts_media/" />
 </paths>

@@ -54,6 +54,7 @@
     <string name="option_unlock">Unlock Tab</string>
     <string name="option_delete_tab">Delete Tab</string>
     <string name="option_copy_link">Copy Link</string>
+    <string name="option_edit_link">Edit Link</string>
     <string name="site_options">Site Options</string>
 
     <!-- Deletion -->
@@ -73,6 +74,7 @@
     <string name="dialog_remove_download_title">Remove Download?</string>
     <string name="dialog_remove_download_message">This will remove %1$s from your history.</string>
     <string name="dialog_delete_file">Delete File</string>
+    <string name="option_file_details">File Details</string>
 
     <!-- Navigation -->
     <string name="forward">Forward</string>
@@ -111,4 +113,16 @@
     <string name="google_account_title">Google Account</string>
     <string name="not_signed_in">Not signed in</string>
     <string name="manage_google_account">Manage Google Account</string>
+
+    <!-- Privacy & Security Settings -->
+    <string name="privacy_security_title">Privacy &amp; Security</string>
+    <string name="force_dark_title">Force Dark Mode</string>
+    <string name="force_dark_desc">Makes all website backgrounds dark, even if they don\'t support it.</string>
+    <string name="safe_browsing_title">Safe Browsing</string>
+    <string name="safe_browsing_desc">Protects you from dangerous sites and downloads.</string>
+    <string name="biometric_lock_title">Biometric Lock</string>
+    <string name="biometric_lock_desc">Lock the app or Incognito tabs behind Fingerprint/Face ID.</string>
+    <string name="site_permissions_title">Site Permissions</string>
+    <string name="site_permissions_desc">Manage which sites can access your camera, mic, and location.</string>
+    <string name="manage_permissions">Manage Permissions</string>
 </resources>

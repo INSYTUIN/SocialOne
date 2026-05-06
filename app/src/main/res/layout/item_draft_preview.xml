@@ -9,13 +9,18 @@
     app:cardElevation="0dp"
     app:strokeWidth="1.5dp"
     app:strokeColor="@color/button_background"
-    app:cardBackgroundColor="@android:color/transparent">
+    app:cardBackgroundColor="@android:color/transparent"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="12dp">
+        android:padding="12dp"
+        android:clickable="false"
+        android:focusable="false">
 
         <TextView
             android:id="@+id/tvDraftContent"
@@ -25,6 +30,8 @@
             android:maxLines="2"
             android:textColor="@color/primary_text"
             android:textSize="13sp"
+            android:clickable="false"
+            android:focusable="false"
             tools:text="This is a draft content preview..." />
 
         <HorizontalScrollView
@@ -34,13 +41,17 @@
             android:layout_marginTop="8dp"
             android:scrollbars="none"
             android:visibility="gone"
+            android:clickable="false"
+            android:focusable="false"
             tools:visibility="visible">
 
             <LinearLayout
                 android:id="@+id/draftImagesContainer"
                 android:layout_width="wrap_content"
                 android:layout_height="40dp"
-                android:orientation="horizontal" />
+                android:orientation="horizontal"
+                android:clickable="false"
+                android:focusable="false" />
         </HorizontalScrollView>
 
         <LinearLayout
@@ -48,14 +59,18 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:clickable="false"
+            android:focusable="false">
 
             <ImageView
                 android:id="@+id/ivMediaIcon"
                 android:layout_width="14dp"
                 android:layout_height="14dp"
                 android:src="@drawable/camera"
-                app:tint="@color/button_background" />
+                app:tint="@color/button_background"
+                android:clickable="false"
+                android:focusable="false" />
 
             <TextView
                 android:id="@+id/tvMediaCount"
@@ -65,6 +80,8 @@
                 android:textColor="@color/button_background"
                 android:textSize="11sp"
                 android:textStyle="bold"
+                android:clickable="false"
+                android:focusable="false"
                 tools:text="2 items" />
 
             <View

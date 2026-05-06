@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <integer name="dashboard_span_count">6</integer>
+    <integer name="tab_switcher_span_count_portrait">3</integer>
+    <integer name="tab_switcher_span_count_landscape">4</integer>
+</resources>

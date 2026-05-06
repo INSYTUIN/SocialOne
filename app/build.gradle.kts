@@ -48,6 +48,8 @@ dependencies {
     implementation(libs.constraintlayout)
     implementation(libs.swiperefreshlayout)
     implementation(libs.androidx.work.runtime)
+    implementation(libs.androidx.webkit)
+    implementation(libs.androidx.biometric)
     implementation("com.github.bumptech.glide:glide:4.16.0")
     annotationProcessor("com.github.bumptech.glide:compiler:4.16.0")
     testImplementation(libs.junit)

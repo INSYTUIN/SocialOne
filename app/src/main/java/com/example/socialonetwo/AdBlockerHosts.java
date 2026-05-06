@@ -33,7 +33,7 @@ public class AdBlockerHosts {
         try {
             InputStream is = context.getAssets().open("ad_hosts.txt");
             BufferedReader reader = new BufferedReader(new InputStreamReader(is));
-            
+
             BLOCKED_DOMAINS.clear();
             WHITELIST_DOMAINS.clear();
             URL_FILTERS.clear();
@@ -60,7 +60,7 @@ public class AdBlockerHosts {
                     } else {
                         BLOCKED_DOMAINS.add(domain);
                     }
-                } 
+                }
                 // Handle path-based filters or simple substrings
                 else if (line.contains("/") || line.contains("*")) {
                     String pattern = line.toLowerCase();
@@ -81,7 +81,7 @@ public class AdBlockerHosts {
                             line = parts[0];
                         }
                     }
-                    
+
                     String host = line.toLowerCase();
                     if (isException) {
                         WHITELIST_DOMAINS.add(host);

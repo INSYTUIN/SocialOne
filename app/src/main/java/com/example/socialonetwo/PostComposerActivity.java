@@ -1,6 +1,7 @@
 package com.example.socialonetwo;
 
 import android.annotation.SuppressLint;
+import android.content.ClipData;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
@@ -15,11 +16,14 @@ import android.view.ViewGroup;
 import android.util.Log;
 import android.view.animation.AnimationUtils;
 import android.webkit.MimeTypeMap;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import androidx.core.content.FileProvider;
 import android.widget.Button;
-import android.widget.HorizontalScrollView;
 import android.widget.ImageButton;
 import android.widget.ImageView;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.activity.EdgeToEdge;
@@ -55,11 +59,13 @@ public class PostComposerActivity extends AppCompatActivity {
     private FirestoreManager firestoreManager;
     private List<Uri> selectedMediaUris = new ArrayList<>();
     private List<JSONObject> drafts = new ArrayList<>();
-    private TextView tvDraftsTitle, tvMediaPlaceholder, tvDraftsPlaceholder;
+    private TextView tvDraftsTitle, tvMediaPlaceholder, tvDraftsPlaceholder, tvLoadingMessage;
+    private View loadingOverlay;
     private static final String KEY_SELECTED_MEDIA = "selected_media_uris";
     private static final String PREFS_NAME = "PostDraftsPrefs";
     private static final String KEY_DRAFTS = "saved_drafts";
     private static final int MAX_DRAFTS = 15;
+    private static final String DRAFTS_MEDIA_DIR = "drafts_media";
 
     // Using the modern Photo Picker for best compatibility and user experience
     private final ActivityResultLauncher<PickVisualMediaRequest> pickMediaLauncher = registerForActivityResult(
@@ -120,6 +126,8 @@ public class PostComposerActivity extends AppCompatActivity {
         tvDraftsTitle = findViewById(R.id.tvDraftsTitle);
         tvMediaPlaceholder = findViewById(R.id.tvMediaPlaceholder);
         tvDraftsPlaceholder = findViewById(R.id.tvDraftsPlaceholder);
+        loadingOverlay = findViewById(R.id.loadingOverlay);
+        tvLoadingMessage = findViewById(R.id.tvLoadingMessage);
         MaterialButton btnAddMedia = findViewById(R.id.btnAddMedia);
         MaterialButton btnSaveDraft = findViewById(R.id.btnSaveDraft);
         ExtendedFloatingActionButton fabPost = findViewById(R.id.fabPost);
@@ -270,27 +278,98 @@ public class PostComposerActivity extends AppCompatActivity {
             return;
         }
 
-        Intent shareIntent = new Intent();
-        if (selectedMediaUris.isEmpty()) {
-            shareIntent.setAction(Intent.ACTION_SEND);
-            shareIntent.putExtra(Intent.EXTRA_TEXT, content);
-            shareIntent.setType("text/plain");
-        } else if (selectedMediaUris.size() == 1) {
-            shareIntent.setAction(Intent.ACTION_SEND);
-            shareIntent.putExtra(Intent.EXTRA_TEXT, content);
-            Uri uri = selectedMediaUris.get(0);
-            shareIntent.putExtra(Intent.EXTRA_STREAM, uri);
-            shareIntent.setType(getMimeType(uri));
-            shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        } else {
-            shareIntent.setAction(Intent.ACTION_SEND_MULTIPLE);
-            shareIntent.putExtra(Intent.EXTRA_TEXT, content);
-            shareIntent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, new ArrayList<>(selectedMediaUris));
-            shareIntent.setType("*/*");
-            shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        ArrayList<Uri> localUris = new ArrayList<>();
+        StringBuilder textWithLinks = new StringBuilder(content);
+
+        for (Uri uri : selectedMediaUris) {
+            if (uri == null) continue;
+            
+            if (isRemoteUri(uri)) {
+                if (textWithLinks.length() > 0) textWithLinks.append("\n\n");
+                textWithLinks.append(uri);
+            } else if (isLocalUriAccessible(uri)) {
+                localUris.add(uri);
+            }
         }
 
-        startActivity(Intent.createChooser(shareIntent, "Share post via..."));
+        String finalContent = textWithLinks.toString();
+        Intent shareIntent = new Intent();
+        shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+        if (localUris.isEmpty()) {
+            shareIntent.setAction(Intent.ACTION_SEND);
+            shareIntent.setType("text/plain");
+            shareIntent.putExtra(Intent.EXTRA_TEXT, finalContent);
+        } else {
+            if (localUris.size() == 1) {
+                shareIntent.setAction(Intent.ACTION_SEND);
+                Uri uri = localUris.get(0);
+                shareIntent.putExtra(Intent.EXTRA_STREAM, uri);
+                shareIntent.setType(getMimeType(uri));
+            } else {
+                shareIntent.setAction(Intent.ACTION_SEND_MULTIPLE);
+                shareIntent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, localUris);
+                shareIntent.setType(getCombinedMimeType(localUris));
+            }
+
+            if (!finalContent.isEmpty()) {
+                shareIntent.putExtra(Intent.EXTRA_TEXT, finalContent);
+            }
+
+            // Grant permissions via ClipData for Android 10+
+            ClipData clipData = ClipData.newRawUri("Post Media", localUris.get(0));
+            for (int k = 1; k < localUris.size(); k++) {
+                clipData.addItem(new ClipData.Item(localUris.get(k)));
+            }
+            shareIntent.setClipData(clipData);
+        }
+
+        if (!finalContent.isEmpty()) {
+            shareIntent.putExtra(Intent.EXTRA_SUBJECT, "Shared via Social One");
+        }
+
+        try {
+            Intent chooser = Intent.createChooser(shareIntent, "Share Post");
+            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(chooser);
+        } catch (Exception e) {
+            Log.e("PostComposer", "Final share failure", e);
+            Toast.makeText(this, "Could not open sharing apps", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private boolean isRemoteUri(Uri uri) {
+        String scheme = uri.getScheme();
+        return scheme != null && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"));
+    }
+
+    private boolean isLocalUriAccessible(Uri uri) {
+        if (uri == null) return false;
+        String scheme = uri.getScheme();
+        if (scheme == null || (!scheme.equalsIgnoreCase("content") && !scheme.equalsIgnoreCase("file"))) {
+            return false;
+        }
+
+        try (android.database.Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+            return cursor != null;
+        } catch (Exception e) {
+            Log.w("PostComposer", "URI no longer accessible: " + uri);
+        }
+        return false;
+    }
+
+    private String getCombinedMimeType(List<Uri> uris) {
+        if (uris == null || uris.isEmpty()) return "*/*";
+        String firstType = getMimeType(uris.get(0));
+        String baseType = firstType.split("/")[0];
+
+        for (int i = 1; i < uris.size(); i++) {
+            String currentType = getMimeType(uris.get(i));
+            if (!currentType.startsWith(baseType + "/")) {
+                return "*/*"; // Mixed media types (e.g. image + video)
+            }
+        }
+        return baseType + "/*"; // Uniform media types (e.g. all images)
     }
 
     private void saveCurrentAsDraft() {
@@ -305,24 +384,81 @@ public class PostComposerActivity extends AppCompatActivity {
             return;
         }
 
-        try {
-            JSONObject draft = new JSONObject();
-            draft.put("text", content);
-            JSONArray mediaArray = new JSONArray();
-            for (Uri uri : selectedMediaUris) {
-                mediaArray.put(uri.toString());
-            }
-            draft.put("media", mediaArray);
-            draft.put("timestamp", System.currentTimeMillis());
+        showLoading("Saving draft...");
 
-            drafts.add(0, draft);
-            saveDraftsToPrefs();
-            draftAdapter.notifyItemInserted(0);
-            rvDrafts.scrollToPosition(0);
-            updateDraftsVisibility();
-            Toast.makeText(this, "Draft saved", Toast.LENGTH_SHORT).show();
-        } catch (JSONException e) {
-            e.printStackTrace();
+        new Thread(() -> {
+            try {
+                JSONObject draft = new JSONObject();
+                draft.put("text", content);
+                JSONArray mediaArray = new JSONArray();
+
+                File mediaDir = new File(getFilesDir(), DRAFTS_MEDIA_DIR);
+                if (!mediaDir.exists()) {
+                    boolean created = mediaDir.mkdirs();
+                    if (!created && !mediaDir.exists()) {
+                        Log.e("PostComposer", "Failed to create media directory");
+                    }
+                }
+
+                for (Uri uri : selectedMediaUris) {
+                    if (isRemoteUri(uri)) {
+                        mediaArray.put(uri.toString());
+                    } else {
+                        // Copy local media to internal storage to ensure persistence
+                        String fileName = "draft_" + System.currentTimeMillis() + "_" + (int)(Math.random() * 1000);
+                        String extension = MimeTypeMap.getFileExtensionFromUrl(uri.toString());
+                        if (extension == null || extension.isEmpty()) {
+                            String type = getContentResolver().getType(uri);
+                            if (type != null) extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(type);
+                        }
+                        if (extension != null && !extension.isEmpty()) fileName += "." + extension;
+
+                        File destFile = new File(mediaDir, fileName);
+                        if (copyUriToFile(uri, destFile)) {
+                            mediaArray.put(fileName);
+                        }
+                    }
+                }
+                draft.put("media", mediaArray);
+                draft.put("timestamp", System.currentTimeMillis());
+
+                runOnUiThread(() -> {
+                    try {
+                        drafts.add(0, draft);
+                        saveDraftsToPrefs();
+                        draftAdapter.notifyItemInserted(0);
+                        rvDrafts.scrollToPosition(0);
+                        updateDraftsVisibility();
+                        hideLoading();
+                        Toast.makeText(this, "Draft saved with media", Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        hideLoading();
+                    }
+                });
+            } catch (Exception e) {
+                e.printStackTrace();
+                runOnUiThread(() -> {
+                    hideLoading();
+                    Toast.makeText(this, "Error saving draft", Toast.LENGTH_SHORT).show();
+                });
+            }
+        }).start();
+    }
+
+    private boolean copyUriToFile(Uri uri, File destFile) {
+        try (InputStream in = getContentResolver().openInputStream(uri);
+             OutputStream out = new FileOutputStream(destFile)) {
+            if (in == null) return false;
+            byte[] buf = new byte[8192];
+            int len;
+            while ((len = in.read(buf)) > 0) {
+                out.write(buf, 0, len);
+            }
+            return true;
+        } catch (Exception e) {
+            Log.e("PostComposer", "Error copying media to internal storage", e);
+            return false;
         }
     }
 
@@ -409,20 +545,57 @@ public class PostComposerActivity extends AppCompatActivity {
     }
 
     private void useDraft(JSONObject draft) {
-        try {
-            etPostContent.setText(draft.optString("text", ""));
-            selectedMediaUris.clear();
-            JSONArray mediaArray = draft.optJSONArray("media");
-            if (mediaArray != null) {
-                for (int i = 0; i < mediaArray.length(); i++) {
-                    selectedMediaUris.add(Uri.parse(mediaArray.getString(i)));
+        showLoading("Loading draft...");
+        new Thread(() -> {
+            try {
+                String text = draft.optString("text", "");
+                List<Uri> newUris = new ArrayList<>();
+                JSONArray mediaArray = draft.optJSONArray("media");
+                if (mediaArray != null) {
+                    for (int i = 0; i < mediaArray.length(); i++) {
+                        String item = mediaArray.getString(i);
+                        if (item.startsWith("http")) {
+                            newUris.add(Uri.parse(item));
+                        } else {
+                            // Load from internal storage
+                            File mediaFile = new File(new File(getFilesDir(), DRAFTS_MEDIA_DIR), item);
+                            if (mediaFile.exists()) {
+                                Uri internalUri = FileProvider.getUriForFile(this, getPackageName() + ".provider", mediaFile);
+                                newUris.add(internalUri);
+                            }
+                        }
+                    }
                 }
+
+                runOnUiThread(() -> {
+                    etPostContent.setText(text);
+                    selectedMediaUris.clear();
+                    selectedMediaUris.addAll(newUris);
+                    mediaAdapter.notifyDataSetChanged();
+                    updateMediaVisibility();
+                    hideLoading();
+                    Toast.makeText(this, "Draft loaded", Toast.LENGTH_SHORT).show();
+                });
+            } catch (Exception e) {
+                e.printStackTrace();
+                runOnUiThread(() -> {
+                    hideLoading();
+                    Toast.makeText(this, "Error loading draft", Toast.LENGTH_SHORT).show();
+                });
             }
-            mediaAdapter.notifyDataSetChanged();
-            updateMediaVisibility();
-            Toast.makeText(this, "Draft loaded", Toast.LENGTH_SHORT).show();
-        } catch (JSONException e) {
-            e.printStackTrace();
+        }).start();
+    }
+
+    private void showLoading(String message) {
+        if (loadingOverlay != null) {
+            if (tvLoadingMessage != null) tvLoadingMessage.setText(message);
+            loadingOverlay.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void hideLoading() {
+        if (loadingOverlay != null) {
+            loadingOverlay.setVisibility(View.GONE);
         }
     }
 
@@ -470,10 +643,19 @@ public class PostComposerActivity extends AppCompatActivity {
     }
 
     private String getMimeType(Uri uri) {
-        String type = getContentResolver().getType(uri);
+        if (uri == null) return "*/*";
+        String type = null;
+        try {
+            type = getContentResolver().getType(uri);
+        } catch (Exception e) {
+            Log.w("PostComposer", "Could not get MIME type from resolver: " + uri);
+        }
+        
         if (type == null) {
             String extension = MimeTypeMap.getFileExtensionFromUrl(uri.toString());
-            type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase());
+            if (extension != null) {
+                type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase());
+            }
         }
         return (type == null) ? "*/*" : type;
     }
@@ -539,8 +721,17 @@ public class PostComposerActivity extends AppCompatActivity {
                 holder.imagesScroll.setVisibility(View.VISIBLE);
                 for (int i = 0; i < Math.min(mediaCount, 5); i++) {
                     try {
-                        String uriStr = media.getString(i);
+                        String item = media.getString(i);
+                        Object loadSource;
+                        if (item.startsWith("http")) {
+                            loadSource = item;
+                        } else {
+                            loadSource = new File(new File(holder.itemView.getContext().getFilesDir(), DRAFTS_MEDIA_DIR), item);
+                        }
+                        
                         ImageView iv = new ImageView(holder.itemView.getContext());
+                        iv.setClickable(false);
+                        iv.setFocusable(false);
                         android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(dpToPx(40, holder.itemView), dpToPx(40, holder.itemView));
                         lp.setMargins(0, 0, dpToPx(4, holder.itemView), 0);
                         iv.setLayoutParams(lp);
@@ -548,7 +739,7 @@ public class PostComposerActivity extends AppCompatActivity {
                         
                         // Load image with rounded corners
                         com.bumptech.glide.Glide.with(holder.itemView.getContext())
-                            .load(uriStr)
+                            .load(loadSource)
                             .transform(new com.bumptech.glide.load.resource.bitmap.CenterCrop(), 
                                        new com.bumptech.glide.load.resource.bitmap.RoundedCorners(dpToPx(4, holder.itemView)))
                             .into(iv);
@@ -562,9 +753,9 @@ public class PostComposerActivity extends AppCompatActivity {
                 holder.imagesScroll.setVisibility(View.GONE);
             }
 
+            holder.itemView.setOnClickListener(v -> useDraft(draft));
             setClickAnimations(holder.itemView, holder.btnDelete);
 
-            holder.itemView.setOnClickListener(v -> useDraft(draft));
             holder.btnDelete.setOnClickListener(v -> {
                 int pos = holder.getAdapterPosition();
                 if (pos != RecyclerView.NO_POSITION) {
@@ -623,6 +814,24 @@ public class PostComposerActivity extends AppCompatActivity {
 
         dBtnConfirm.setOnClickListener(v -> {
             deleteDialog.dismiss();
+            JSONObject draft = drafts.get(position);
+            JSONArray media = draft.optJSONArray("media");
+            if (media != null) {
+                File mediaDir = new File(getFilesDir(), DRAFTS_MEDIA_DIR);
+                for (int i = 0; i < media.length(); i++) {
+                    try {
+                        String item = media.getString(i);
+                        if (!item.startsWith("http")) {
+                            File file = new File(mediaDir, item);
+                            if (file.exists()) {
+                                boolean deleted = file.delete();
+                                if (!deleted) Log.w("PostComposer", "Could not delete draft media: " + item);
+                            }
+                        }
+                    } catch (JSONException e) { e.printStackTrace(); }
+                }
+            }
+
             drafts.remove(position);
             saveDraftsToPrefs();
             draftAdapter.notifyItemRemoved(position);

@@ -26,6 +26,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.FileProvider;
+import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -45,18 +46,39 @@ public class DownloadHandler {
     }
 
     public void downloadFile(String url, String mimetype, String contentDisposition, String userAgent) {
-        DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
-        if (mimetype != null) {
-            request.setMimeType(mimetype);
+        String finalMimeType = mimetype;
+        // Fix for APK files often being served with generic MIME types
+        if (url != null && url.toLowerCase().contains(".apk")) {
+            if (finalMimeType == null || finalMimeType.equalsIgnoreCase("application/octet-stream") || finalMimeType.equalsIgnoreCase("binary/octet-stream")) {
+                finalMimeType = "application/vnd.android.package-archive";
+            }
         }
+
+        DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+        if (finalMimeType != null) {
+            request.setMimeType(finalMimeType);
+        }
+        
+        String fileName = URLUtil.guessFileName(url, contentDisposition, finalMimeType);
+        
+        // Ensure APK extension if we detected it's an APK
+        if (url != null && url.toLowerCase().contains(".apk") && !fileName.toLowerCase().endsWith(".apk")) {
+            // Remove .bin if guessFileName added it erroneously
+            if (fileName.toLowerCase().endsWith(".bin")) {
+                fileName = fileName.substring(0, fileName.length() - 4) + ".apk";
+            } else {
+                fileName = fileName + ".apk";
+            }
+        }
+
         String cookies = CookieManager.getInstance().getCookie(url);
         request.addRequestHeader("cookie", cookies);
         request.addRequestHeader("User-Agent", userAgent);
         request.setDescription("Downloading file...");
-        request.setTitle(URLUtil.guessFileName(url, contentDisposition, mimetype));
+        request.setTitle(fileName);
         request.allowScanningByMediaScanner();
         request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-        request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, URLUtil.guessFileName(url, contentDisposition, mimetype));
+        request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
 
         DownloadManager dm = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
         if (dm != null) {
@@ -98,14 +120,68 @@ public class DownloadHandler {
 
         clearAll.setVisibility(View.GONE);
 
-        downloadsDialog.show();
+        // Perform an initial update before showing to ensure content is ready
+        updateDownloadListFromManager(adapter, tvEmpty, rv);
 
         if (downloadsDialog.getWindow() != null) {
-            int width = (int) (context.getResources().getDisplayMetrics().widthPixels * 0.95);
-            downloadsDialog.getWindow().setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT);
+            // Set width to 95% before showing to avoid wonky jumping animation
+            android.view.WindowManager.LayoutParams lp = new android.view.WindowManager.LayoutParams();
+            lp.copyFrom(downloadsDialog.getWindow().getAttributes());
+            lp.width = (int) (context.getResources().getDisplayMetrics().widthPixels * 0.95);
+            lp.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
+            downloadsDialog.getWindow().setAttributes(lp);
         }
 
-        startDownloadPolling(adapter, tvEmpty, rv);
+        // Hide keyboard when opening downloads to prevent layout glitches
+        if (context instanceof android.app.Activity) {
+            android.app.Activity activity = (android.app.Activity) context;
+            android.view.View focus = activity.getCurrentFocus();
+            if (focus != null) {
+                android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (imm != null) imm.hideSoftInputFromWindow(focus.getWindowToken(), 0);
+                focus.clearFocus();
+            }
+        }
+        
+        downloadsDialog.show();
+
+        // Delay polling slightly to allow opening animation to finish smoothly
+        downloadUpdateHandler.postDelayed(() -> startDownloadPolling(adapter, tvEmpty, rv), 300);
+    }
+
+    private String formatFileSize(long size) {
+        if (size <= 0) return "0 KB";
+        if (size < 1000 * 1024) { // Less than 1000 KB
+            return (size / 1024) + " KB";
+        } else if (size < 1000 * 1024 * 1024) { // Less than 1000 MB
+            return String.format(java.util.Locale.US, "%.1f MB", size / (1024.0 * 1024.0));
+        } else {
+            return String.format(java.util.Locale.US, "%.2f GB", size / (1024.0 * 1024.0 * 1024.0));
+        }
+    }
+
+    private void showFileDetailsDialog(DownloadItem item) {
+        StringBuilder details = new StringBuilder();
+        details.append("File Name: ").append(item.title).append("\n\n");
+        details.append("Size: ").append(formatFileSize(item.totalSize)).append("\n\n");
+        if (item.mimeType != null) {
+            details.append("Type: ").append(item.mimeType).append("\n\n");
+        }
+        if (item.localUri != null) {
+            try {
+                details.append("Path: ").append(Uri.parse(item.localUri).getPath()).append("\n\n");
+            } catch (Exception ignored) {}
+        }
+        if (item.lastModified > 0) {
+            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("MMM dd, yyyy HH:mm", java.util.Locale.getDefault());
+            details.append("Date: ").append(sdf.format(new java.util.Date(item.lastModified)));
+        }
+
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+                .setTitle("File Details")
+                .setMessage(details.toString())
+                .setPositiveButton("OK", null)
+                .show();
     }
 
     private void startDownloadPolling(DownloadsAdapter adapter, TextView tvEmpty, RecyclerView rv) {
@@ -125,33 +201,47 @@ public class DownloadHandler {
         }
     }
 
-    @SuppressLint("Range")
     private void updateDownloadListFromManager(DownloadsAdapter adapter, TextView tvEmpty, RecyclerView rv) {
-        DownloadManager dm = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
-        if (dm == null) return;
+        new Thread(() -> {
+            DownloadManager dm = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
+            if (dm == null) return;
 
-        DownloadManager.Query query = new DownloadManager.Query();
-        Cursor cursor = dm.query(query);
+            DownloadManager.Query query = new DownloadManager.Query();
+            try (Cursor cursor = dm.query(query)) {
+                List<DownloadItem> items = new ArrayList<>();
+                if (cursor != null && cursor.moveToFirst()) {
+                    int idIdx = cursor.getColumnIndex(DownloadManager.COLUMN_ID);
+                    int titleIdx = cursor.getColumnIndex(DownloadManager.COLUMN_TITLE);
+                    int statusIdx = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS);
+                    int totalIdx = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES);
+                    int bytesIdx = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR);
+                    int uriIdx = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI);
+                    int mimeIdx = cursor.getColumnIndex(DownloadManager.COLUMN_MEDIA_TYPE);
+                    int dateIdx = cursor.getColumnIndex(DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP);
 
-        List<DownloadItem> items = new ArrayList<>();
-        if (cursor != null && cursor.moveToFirst()) {
-            do {
-                DownloadItem item = new DownloadItem();
-                item.id = cursor.getLong(cursor.getColumnIndex(DownloadManager.COLUMN_ID));
-                item.title = cursor.getString(cursor.getColumnIndex(DownloadManager.COLUMN_TITLE));
-                item.status = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS));
-                item.totalSize = cursor.getLong(cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
-                item.bytesSoFar = cursor.getLong(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
-                item.localUri = cursor.getString(cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI));
-                items.add(item);
-            } while (cursor.moveToNext());
-            cursor.close();
-        }
+                    do {
+                        DownloadItem item = new DownloadItem();
+                        item.id = cursor.getLong(idIdx);
+                        item.title = cursor.getString(titleIdx);
+                        item.status = cursor.getInt(statusIdx);
+                        item.totalSize = cursor.getLong(totalIdx);
+                        item.bytesSoFar = cursor.getLong(bytesIdx);
+                        item.localUri = cursor.getString(uriIdx);
+                        item.mimeType = cursor.getString(mimeIdx);
+                        item.lastModified = cursor.getLong(dateIdx);
+                        items.add(item);
+                    } while (cursor.moveToNext());
+                }
 
-        tvEmpty.setVisibility(items.isEmpty() ? View.VISIBLE : View.GONE);
-        rv.setVisibility(items.isEmpty() ? View.GONE : View.VISIBLE);
-
-        adapter.setItems(items);
+                downloadUpdateHandler.post(() -> {
+                    if (tvEmpty != null) tvEmpty.setVisibility(items.isEmpty() ? View.VISIBLE : View.GONE);
+                    if (rv != null) rv.setVisibility(items.isEmpty() ? View.GONE : View.VISIBLE);
+                    adapter.setItems(items);
+                });
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }).start();
     }
 
     private static class DownloadItem {
@@ -161,6 +251,8 @@ public class DownloadHandler {
         long totalSize;
         long bytesSoFar;
         String localUri;
+        String mimeType;
+        long lastModified;
     }
 
     private class DownloadsAdapter extends RecyclerView.Adapter<DownloadsAdapter.ViewHolder> {
@@ -175,8 +267,9 @@ public class DownloadHandler {
 
         @SuppressLint("NotifyDataSetChanged")
         public void setItems(List<DownloadItem> newItems) {
+            DiffUtil.DiffResult diffResult = DiffUtil.calculateDiff(new DownloadDiffCallback(this.items, newItems));
             this.items = newItems;
-            notifyDataSetChanged();
+            diffResult.dispatchUpdatesTo(this);
         }
 
         @NonNull
@@ -196,7 +289,7 @@ public class DownloadHandler {
                 if (item.totalSize > 0) {
                     int progress = (int) ((item.bytesSoFar * 100) / item.totalSize);
                     holder.progressBar.setProgress(progress);
-                    holder.fileDetails.setText("Downloading... " + progress + "%");
+                    holder.fileDetails.setText("Downloading... " + formatFileSize(item.bytesSoFar) + " / " + formatFileSize(item.totalSize) + " (" + progress + "%)");
                 } else {
                     holder.progressBar.setIndeterminate(true);
                     holder.fileDetails.setText("Downloading...");
@@ -204,7 +297,7 @@ public class DownloadHandler {
             } else {
                 holder.progressBar.setVisibility(View.GONE);
                 if (item.status == DownloadManager.STATUS_SUCCESSFUL) {
-                    holder.fileDetails.setText("Completed (" + (item.totalSize / 1024) + " KB)");
+                    holder.fileDetails.setText("Completed (" + formatFileSize(item.totalSize) + ")");
                 } else if (item.status == DownloadManager.STATUS_FAILED) {
                     holder.fileDetails.setText("Download Failed");
                 } else {
@@ -220,10 +313,17 @@ public class DownloadHandler {
                     Intent intent = new Intent(Intent.ACTION_VIEW);
 
                     String extension = MimeTypeMap.getFileExtensionFromUrl(contentUri.toString());
-                    String mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase());
-                    if (mimeType == null) mimeType = "*/*";
+                    String finalMime;
+                    if (extension != null && extension.equalsIgnoreCase("apk")) {
+                        finalMime = "application/vnd.android.package-archive";
+                    } else if (extension != null) {
+                        finalMime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase());
+                    } else {
+                        finalMime = "*/*";
+                    }
+                    if (finalMime == null) finalMime = "*/*";
 
-                    intent.setDataAndType(contentUri, mimeType);
+                    intent.setDataAndType(contentUri, finalMime);
                     intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     context.startActivity(intent);
                 } catch (Exception e) {
@@ -234,16 +334,21 @@ public class DownloadHandler {
             holder.btnOptions.setOnClickListener(v -> {
                 androidx.appcompat.view.ContextThemeWrapper wrapper = new androidx.appcompat.view.ContextThemeWrapper(context, R.style.PopupMenuTheme);
                 androidx.appcompat.widget.PopupMenu popup = new androidx.appcompat.widget.PopupMenu(wrapper, v);
-                popup.getMenu().add(R.string.dialog_delete_file);
+                popup.getMenu().add(0, 0, 0, R.string.option_file_details);
+                popup.getMenu().add(0, 1, 1, R.string.dialog_delete_file);
+                
                 popup.setOnMenuItemClickListener(menuItem -> {
-                    if (menuItem.getTitle() != null && menuItem.getTitle().toString().equals(context.getString(R.string.dialog_delete_file))) {
+                    if (menuItem.getItemId() == 0) {
+                        showFileDetailsDialog(item);
+                        return true;
+                    } else if (menuItem.getItemId() == 1) {
                         new com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
                                 .setTitle(R.string.dialog_remove_download_title)
                                 .setMessage(context.getString(R.string.dialog_remove_download_message, item.title))
                                 .setPositiveButton(R.string.delete, (dialog, which) -> {
                                     DownloadManager dm = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
                                     if (dm != null) dm.remove(item.id);
-                                    updateDownloadListFromManager(this, tvEmpty, rv);
+                                    updateDownloadListFromManager(DownloadsAdapter.this, tvEmpty, rv);
                                 })
                                 .setNegativeButton(R.string.cancel, null)
                                 .show();
@@ -272,6 +377,36 @@ public class DownloadHandler {
                 btnOptions = itemView.findViewById(R.id.btnDownloadOptions);
                 progressBar = itemView.findViewById(R.id.pbDownload);
             }
+        }
+    }
+
+    private static class DownloadDiffCallback extends DiffUtil.Callback {
+        private final List<DownloadItem> oldList;
+        private final List<DownloadItem> newList;
+
+        public DownloadDiffCallback(List<DownloadItem> oldList, List<DownloadItem> newList) {
+            this.oldList = oldList;
+            this.newList = newList;
+        }
+
+        @Override
+        public int getOldListSize() { return oldList.size(); }
+        @Override
+        public int getNewListSize() { return newList.size(); }
+
+        @Override
+        public boolean areItemsTheSame(int oldPos, int newPos) {
+            return oldList.get(oldPos).id == newList.get(newPos).id;
+        }
+
+        @Override
+        public boolean areContentsTheSame(int oldPos, int newPos) {
+            DownloadItem oldItem = oldList.get(oldPos);
+            DownloadItem newItem = newList.get(newPos);
+            return oldItem.status == newItem.status &&
+                   oldItem.bytesSoFar == newItem.bytesSoFar &&
+                   oldItem.totalSize == newItem.totalSize &&
+                   (oldItem.title != null && oldItem.title.equals(newItem.title));
         }
     }
 }

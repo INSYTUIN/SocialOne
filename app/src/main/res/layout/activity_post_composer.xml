@@ -48,7 +48,7 @@
                     android:layout_centerInParent="true"
                     android:text="Create Post"
                     android:textColor="@color/primary_text"
-                    android:textSize="18sp"
+                    android:textSize="@dimen/toolbar_title_size"
                     android:textStyle="bold" />
 
                 <ImageButton
@@ -79,7 +79,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:padding="@dimen/composer_padding">
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
@@ -113,7 +113,7 @@
                             android:background="@android:color/transparent"
                             android:inputType="textMultiLine"
                             android:minLines="6"
-                            android:textSize="18sp"
+                            android:textSize="@dimen/composer_text_size"
                             android:textColor="@color/primary_text" />
                     </com.google.android.material.textfield.TextInputLayout>
 
@@ -167,10 +167,9 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:layout_weight="1"
                 android:text="Attached Media"
                 android:textColor="@color/primary_text"
-                android:textSize="16sp"
+                android:textSize="@dimen/composer_section_title_size"
                 android:textStyle="bold" />
 
             <androidx.recyclerview.widget.RecyclerView
@@ -200,7 +199,7 @@
                 android:layout_marginTop="16dp"
                 android:text="Your Drafts"
                 android:textStyle="bold"
-                android:textSize="16sp"
+                android:textSize="@dimen/composer_section_title_size"
                 android:textColor="@color/primary_text" />
 
             <androidx.recyclerview.widget.RecyclerView
@@ -245,5 +244,47 @@
             app:iconTint="@color/button_text"
             app:cornerRadius="16dp" />
     </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/loadingOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#80000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="8dp">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="24dp">
+
+                <ProgressBar
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:indeterminate="true"
+                    android:indeterminateTint="@color/button_background" />
+
+                <TextView
+                    android:id="@+id/tvLoadingMessage"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="Processing media..."
+                    android:textColor="@color/primary_text"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </FrameLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

@@ -128,7 +128,7 @@ public class FirestoreManager {
                         List<String> bookmarks = (List<String>) documentSnapshot.get(KEY_BOOKMARKS);
                         List<String> history = (List<String>) documentSnapshot.get(KEY_HISTORY);
                         List<String> postDrafts = (List<String>) documentSnapshot.get(KEY_POST_DRAFTS);
-                        
+
                         listener.onDataLoaded(tabs, bookmarks, history);
                         if (postDrafts != null) {
                             listener.onPostDraftsLoaded(postDrafts);

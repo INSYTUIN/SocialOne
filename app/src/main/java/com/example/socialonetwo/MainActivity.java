@@ -14,6 +14,7 @@ import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.net.http.SslError;
@@ -50,6 +51,9 @@ import android.webkit.WebSettings;
 import android.webkit.WebStorage;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import androidx.webkit.WebViewFeature;
+import androidx.webkit.WebSettingsCompat;
+import androidx.webkit.WebViewCompat;
 import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
 import android.widget.Button;
@@ -80,6 +84,9 @@ import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+import androidx.biometric.BiometricPrompt;
+import androidx.biometric.BiometricManager;
+import androidx.core.content.ContextCompat;
 
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.materialswitch.MaterialSwitch;
@@ -97,6 +104,7 @@ import java.io.InputStreamReader;
 import java.lang.ref.WeakReference;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.concurrent.Executor;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -153,6 +161,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private static final String SEARCH_ENGINE_KEY = "DefaultSearchEngine";
     private static final String ADVANCED_ANIM_KEY = "AdvancedAnimationsEnabled";
     private static final String AD_BLOCKER_KEY = "AdBlockerEnabled";
+    private static final String FORCE_DARK_KEY = "ForceDarkModeEnabled";
+    private static final String SAFE_BROWSING_KEY = "SafeBrowsingEnabled";
+    private static final String BIOMETRIC_LOCK_KEY = "BiometricLockEnabled";
 
     private String currentUrl = null;
     private int currentPosition = -1;
@@ -227,6 +238,58 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private WebChromeClient.CustomViewCallback customViewCallback;
     private View customView;
 
+    private boolean isAuthenticated = false;
+
+    private void checkBiometricLock() {
+        if (sharedPreferences.getBoolean(BIOMETRIC_LOCK_KEY, false) && !isAuthenticated) {
+            showBiometricPrompt();
+        }
+    }
+
+    private void showBiometricPrompt() {
+        BiometricManager biometricManager = BiometricManager.from(this);
+        switch (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL)) {
+            case BiometricManager.BIOMETRIC_SUCCESS:
+                break;
+            case BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE:
+            case BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE:
+            case BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED:
+                // If biometric is not available or not enrolled, we don't lock the app
+                // to avoid locking out the user.
+                return;
+        }
+
+        Executor executor = ContextCompat.getMainExecutor(this);
+        BiometricPrompt biometricPrompt = new BiometricPrompt(MainActivity.this, executor, new BiometricPrompt.AuthenticationCallback() {
+            @Override
+            public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
+                super.onAuthenticationError(errorCode, errString);
+                if (errorCode == BiometricPrompt.ERROR_USER_CANCELED || errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
+                    finish(); // Close app if authentication is canceled
+                }
+            }
+
+            @Override
+            public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
+                super.onAuthenticationSucceeded(result);
+                isAuthenticated = true;
+            }
+
+            @Override
+            public void onAuthenticationFailed() {
+                super.onAuthenticationFailed();
+            }
+        });
+
+        BiometricPrompt.PromptInfo promptInfo = new BiometricPrompt.PromptInfo.Builder()
+                .setTitle("SocialOne Authentication")
+                .setSubtitle("Authenticate to access the app")
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+                .build();
+
+        biometricPrompt.authenticate(promptInfo);
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -240,6 +303,13 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         mediaHandler = new MediaHandler(this, downloadHandler, userAgent);
         preferenceManager = new PreferenceManager(this, firestoreManager);
         searchHandler = new SearchHandler(this);
+
+        // Initialize Safe Browsing service globally
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.SAFE_BROWSING_ENABLE)) {
+            WebViewCompat.startSafeBrowsing(this, success -> {
+                Log.d("SafeBrowsing", "Safe Browsing initialized: " + success);
+            });
+        }
 
         // Initialize main views and layouts
         View mainView = findViewById(R.id.main);
@@ -481,14 +551,14 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         searchSitesRecyclerView.setAdapter(searchSitesAdapter);
 
         recentSitesAdapter = new RecentSitesAdapter(historyList, 8, this);
-        recentRecyclerView.setLayoutManager(new GridLayoutManager(this, 4));
+        recentRecyclerView.setLayoutManager(new GridLayoutManager(this, getResources().getInteger(R.integer.dashboard_span_count)));
         recentRecyclerView.setAdapter(recentSitesAdapter);
         recentPlaceholder = findViewById(R.id.recentPlaceholder);
         updateRecentVisibility();
 
         bookmarksAdapter = new RecentSitesAdapter(bookmarksList, -1, this);
         bookmarksAdapter.setFilterUniqueDomains(false);
-        bookmarksRecyclerView.setLayoutManager(new GridLayoutManager(this, 4));
+        bookmarksRecyclerView.setLayoutManager(new GridLayoutManager(this, getResources().getInteger(R.integer.dashboard_span_count)));
         bookmarksRecyclerView.setAdapter(bookmarksAdapter);
         bookmarksPlaceholder = findViewById(R.id.bookmarksPlaceholder);
         updateBookmarksVisibility();
@@ -971,14 +1041,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     }
 
     private int getTabSwitcherSpanCount() {
-        boolean isTablet = isTablet();
         boolean isLandscape = getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
-
-        if (isTablet) {
-            return isLandscape ? 4 : 3;
-        } else {
-            return isLandscape ? 3 : 2;
-        }
+        return isLandscape ? getResources().getInteger(R.integer.tab_switcher_span_count_landscape) 
+                           : getResources().getInteger(R.integer.tab_switcher_span_count_portrait);
     }
 
     private boolean isTablet() {
@@ -1003,10 +1068,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             return;
         }
 
-        boolean isPanelOpen = controlsPanel.getVisibility() == View.VISIBLE ||
-                searchPanel.getVisibility() == View.VISIBLE ||
-                moreOptionsPanel.getVisibility() == View.VISIBLE ||
-                tabSwitcherPanel.getVisibility() == View.VISIBLE;
+        boolean isPanelOpen = isAnyPanelOpen();
 
         // Check if keyboard is visible
         boolean isKeyboardVisible = false;
@@ -1817,11 +1879,17 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 .setNegativeButton(R.string.cancel, null)
                 .show());
 
-        historyDialog.show();
         if (historyDialog.getWindow() != null) {
-            int width = (int) (getResources().getDisplayMetrics().widthPixels * 0.95);
-            historyDialog.getWindow().setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT);
+            // Set width to 95% before showing to avoid wonky jumping animation
+            android.view.WindowManager.LayoutParams lp = new android.view.WindowManager.LayoutParams();
+            lp.copyFrom(historyDialog.getWindow().getAttributes());
+            lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.95);
+            lp.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
+            historyDialog.getWindow().setAttributes(lp);
         }
+
+        hideKeyboard();
+        historyDialog.show();
     }
 
     @Override
@@ -1925,12 +1993,14 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                     isLocked ? getString(R.string.option_unlock) : getString(R.string.option_lock),
                     isBookmarked ? getString(R.string.bookmark_removed) : getString(R.string.option_bookmark),
                     getString(R.string.option_copy_link),
+                    getString(R.string.option_edit_link),
                     getString(R.string.option_delete_tab)
             };
 
             final int[] icons = {
                     isLocked ? R.drawable.unlock : R.drawable.lock,
                     isBookmarked ? R.drawable.starcolor : R.drawable.starnocolor,
+                    0,
                     0,
                     0
             };
@@ -1961,6 +2031,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                         } else if (which == 2) {
                             handleCopyLink(url);
                         } else if (which == 3) {
+                            handleEditLink(url);
+                        } else if (which == 4) {
                             onTabClose(position);
                         }
                     })
@@ -1979,6 +2051,29 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             clipboard.setPrimaryClip(clip);
             Toast.makeText(this, "Link copied to clipboard", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private void handleEditLink(String url) {
+        if (url.startsWith("home://")) {
+            Toast.makeText(this, "Cannot edit this link", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        urlInput.setText(url);
+        urlInput.setSelection(url.length()); // Put cursor at the end
+        
+        beginPanelTransition();
+        hideAllPanelsInternal();
+        controlsPanel.setVisibility(View.VISIBLE);
+        urlInput.requestFocus();
+        
+        // Ensure keyboard is shown
+        urlInput.postDelayed(() -> {
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(urlInput, InputMethodManager.SHOW_IMPLICIT);
+            }
+        }, 100);
     }
 
     private void handleToggleLock(String url) {
@@ -2086,6 +2181,20 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setSupportMultipleWindows(true);
 
+        // Force Dark Mode implementation
+        if (sharedPreferences.getBoolean(FORCE_DARK_KEY, false)) {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+                WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, true);
+            } else if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
+                WebSettingsCompat.setForceDark(settings, WebSettingsCompat.FORCE_DARK_ON);
+            }
+        }
+
+        // Safe Browsing implementation
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.SAFE_BROWSING_ENABLE)) {
+            WebSettingsCompat.setSafeBrowsingEnabled(settings, sharedPreferences.getBoolean(SAFE_BROWSING_KEY, true));
+        }
+
         Boolean isDesktop = desktopModeMap.get(wv);
         if (isDesktop != null && isDesktop) {
             settings.setUserAgentString(DESKTOP_USER_AGENT);
@@ -2122,7 +2231,18 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         wv.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback callback) {
-                callback.invoke(origin, true, false);
+                new com.google.android.material.dialog.MaterialAlertDialogBuilder(MainActivity.this)
+                        .setTitle("Location Permission")
+                        .setMessage(origin + " wants to access your location.")
+                        .setPositiveButton("Allow", (d, w) -> {
+                            saveSitePermission(origin, "Location", true);
+                            callback.invoke(origin, true, true);
+                        })
+                        .setNegativeButton("Block", (d, w) -> {
+                            saveSitePermission(origin, "Location", false);
+                            callback.invoke(origin, false, true);
+                        })
+                        .show();
             }
 
             @Override
@@ -2137,7 +2257,31 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
             @Override
             public void onPermissionRequest(PermissionRequest request) {
-                MainActivity.this.runOnUiThread(() -> request.grant(request.getResources()));
+                MainActivity.this.runOnUiThread(() -> {
+                    String origin = request.getOrigin().toString();
+                    String[] resources = request.getResources();
+                    StringBuilder message = new StringBuilder(origin + " wants to access:\n");
+                    for (String r : resources) {
+                        message.append("• ").append(r.replace("android.webkit.resource.", "")).append("\n");
+                    }
+
+                    new com.google.android.material.dialog.MaterialAlertDialogBuilder(MainActivity.this)
+                            .setTitle("Site Permission Request")
+                            .setMessage(message.toString())
+                            .setPositiveButton("Allow", (d, w) -> {
+                                for (String r : resources) {
+                                    saveSitePermission(origin, r.replace("android.webkit.resource.", ""), true);
+                                }
+                                request.grant(resources);
+                            })
+                            .setNegativeButton("Block", (d, w) -> {
+                                for (String r : resources) {
+                                    saveSitePermission(origin, r.replace("android.webkit.resource.", ""), false);
+                                }
+                                request.deny();
+                            })
+                            .show();
+                });
             }
 
             @Override
@@ -2798,7 +2942,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             // Sync guest data to newly logged in account if necessary
             if (firestoreManager != null) {
                 firestoreManager.performInitialMigration(siteList, bookmarksList, historyList);
-                
+
                 // Also trigger a load to merge any existing cloud data
                 firestoreManager.loadUserData(new FirestoreManager.OnDataLoadedListener() {
                     @Override
@@ -2987,6 +3131,51 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         sharedPreferences.edit().putStringSet(BOOKMARKS_KEY, bookmarkSet).apply();
     }
 
+    private void saveSitePermission(String origin, String permission, boolean granted) {
+        SharedPreferences perms = getSharedPreferences("SitePermissions", MODE_PRIVATE);
+        String key = origin + "|" + permission;
+        perms.edit().putBoolean(key, granted).apply();
+    }
+
+    public void showSitePermissionsManager() {
+        SharedPreferences perms = getSharedPreferences("SitePermissions", MODE_PRIVATE);
+        Map<String, ?> allEntries = perms.getAll();
+        
+        if (allEntries.isEmpty()) {
+            Toast.makeText(this, "No site permissions saved", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        List<String> list = new ArrayList<>();
+        List<String> keysList = new ArrayList<>(allEntries.keySet());
+        for (String key : keysList) {
+            String status = (Boolean) allEntries.get(key) ? "Allowed" : "Blocked";
+            list.add(key.replace("|", " - ") + ": " + status);
+        }
+
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Site Permissions")
+                .setItems(list.toArray(new String[0]), (dialog, which) -> {
+                    String key = keysList.get(which);
+                    
+                    new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                            .setTitle("Revoke Permission?")
+                            .setMessage("Do you want to clear this permission for " + key.split("\\|")[0] + "?")
+                            .setPositiveButton("Revoke", (d, w) -> {
+                                perms.edit().remove(key).apply();
+                                Toast.makeText(this, "Permission revoked. Reload page to apply.", Toast.LENGTH_SHORT).show();
+                            })
+                            .setNegativeButton("Cancel", null)
+                            .show();
+                })
+                .setPositiveButton("Close", null)
+                .setNeutralButton("Clear All", (d, w) -> {
+                    perms.edit().clear().apply();
+                    Toast.makeText(this, "All permissions cleared", Toast.LENGTH_SHORT).show();
+                })
+                .show();
+    }
+
     /**
      * Adds a URL to the browsing history, maintaining a maximum size.
      */
@@ -3115,6 +3304,31 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
         btnCancel.setOnClickListener(v -> dialog.dismiss());
         dialog.show();
+
+   }
+
+    /**
+     * Checks if any of the overlay panels are currently visible.
+     */
+    private boolean isAnyPanelOpen() {
+        return (controlsPanel != null && controlsPanel.getVisibility() == View.VISIBLE) ||
+                (searchPanel != null && searchPanel.getVisibility() == View.VISIBLE) ||
+                (moreOptionsPanel != null && moreOptionsPanel.getVisibility() == View.VISIBLE) ||
+                (tabSwitcherPanel != null && tabSwitcherPanel.getVisibility() == View.VISIBLE);
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        if (ev.getAction() == MotionEvent.ACTION_DOWN) {
+            if (isAnyPanelOpen()) {
+                Rect outRect = new Rect();
+                bottomUiContainer.getGlobalVisibleRect(outRect);
+                if (!outRect.contains((int) ev.getRawX(), (int) ev.getRawY())) {
+                    hideAllPanels();
+                }
+            }
+        }
+        return super.dispatchTouchEvent(ev);
     }
 
     @Override
@@ -3131,7 +3345,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                                   (moreOptionsPanel != null && moreOptionsPanel.getVisibility() == View.VISIBLE) ||
                                   (searchPanel != null && searchPanel.getVisibility() == View.VISIBLE);
             
-            if (panelsToHide) {
+           if (panelsToHide) {
                 beginPanelTransition();
                 if (tabSwitcherPanel != null) tabSwitcherPanel.setVisibility(View.GONE);
                 if (moreOptionsPanel != null) moreOptionsPanel.setVisibility(View.GONE);
@@ -3147,6 +3361,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     @Override
     protected void onResume() {
         super.onResume();
+        checkBiometricLock();
         // Resume current tab and all locked tabs
         for (Map.Entry<String, View> entry : tabMap.entrySet()) {
             if (entry.getValue() instanceof WebView) {

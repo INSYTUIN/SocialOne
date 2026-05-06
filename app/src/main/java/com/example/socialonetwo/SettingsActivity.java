@@ -51,6 +51,9 @@ public class SettingsActivity extends AppCompatActivity {
     private static final String SEARCH_ENGINE_KEY = "DefaultSearchEngine";
     private static final String ADVANCED_ANIM_KEY = "AdvancedAnimationsEnabled";
     private static final String AD_BLOCKER_KEY = "AdBlockerEnabled";
+    private static final String FORCE_DARK_KEY = "ForceDarkModeEnabled";
+    private static final String SAFE_BROWSING_KEY = "SafeBrowsingEnabled";
+    private static final String BIOMETRIC_LOCK_KEY = "BiometricLockEnabled";
 
     private static final String DRAFTS_PREFS_NAME = "PostDraftsPrefs";
     private static final String KEY_DRAFTS = "saved_drafts";
@@ -116,6 +119,36 @@ public class SettingsActivity extends AppCompatActivity {
 
         btnChangeSearchEngine.setOnClickListener(v -> showSearchEngineDialog());
 
+        // Privacy & Security Switches
+        MaterialSwitch switchForceDark = findViewById(R.id.switchForceDark);
+        boolean forceDarkEnabled = sharedPreferences.getBoolean(FORCE_DARK_KEY, false);
+        switchForceDark.setChecked(forceDarkEnabled);
+        switchForceDark.setOnCheckedChangeListener((v, isChecked) -> {
+            sharedPreferences.edit().putBoolean(FORCE_DARK_KEY, isChecked).apply();
+            showRestartDialog();
+        });
+
+        MaterialSwitch switchSafeBrowsing = findViewById(R.id.switchSafeBrowsing);
+        boolean safeBrowsingEnabled = sharedPreferences.getBoolean(SAFE_BROWSING_KEY, true);
+        switchSafeBrowsing.setChecked(safeBrowsingEnabled);
+        switchSafeBrowsing.setOnCheckedChangeListener((v, isChecked) -> {
+            sharedPreferences.edit().putBoolean(SAFE_BROWSING_KEY, isChecked).apply();
+            showRestartDialog();
+        });
+
+        MaterialSwitch switchBiometricLock = findViewById(R.id.switchBiometricLock);
+        boolean biometricLockEnabled = sharedPreferences.getBoolean(BIOMETRIC_LOCK_KEY, false);
+        switchBiometricLock.setChecked(biometricLockEnabled);
+        switchBiometricLock.setOnCheckedChangeListener((v, isChecked) -> {
+            sharedPreferences.edit().putBoolean(BIOMETRIC_LOCK_KEY, isChecked).apply();
+        });
+
+        Button btnManagePermissions = findViewById(R.id.btnManagePermissions);
+        setClickAnimation(btnManagePermissions);
+        btnManagePermissions.setOnClickListener(v -> {
+            showSitePermissionsManager();
+        });
+
         MaterialButton btnQuickSync = findViewById(R.id.btnQuickSync);
         setClickAnimation(btnQuickSync);
         btnQuickSync.setOnClickListener(v -> performQuickSync());
@@ -132,7 +165,7 @@ public class SettingsActivity extends AppCompatActivity {
     private void updateAccountUI() {
         TextView tvUserAccount = findViewById(R.id.tvUserAccount);
         MaterialButton btnManageAccount = findViewById(R.id.btnManageGoogleAccount);
-        
+
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user != null) {
             String accountInfo = user.getDisplayName();
@@ -150,7 +183,7 @@ public class SettingsActivity extends AppCompatActivity {
 
         setClickAnimation(btnManageAccount);
         btnManageAccount.setOnClickListener(v -> {
-            android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_VIEW, 
+            android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_VIEW,
                     android.net.Uri.parse("https://myaccount.google.com/"));
             startActivity(intent);
         });
@@ -183,7 +216,7 @@ public class SettingsActivity extends AppCompatActivity {
                 firestoreManager.saveTabs(new ArrayList<>(mergedSites));
                 firestoreManager.saveBookmarks(new ArrayList<>(mergedBookmarks));
                 firestoreManager.saveHistory(new ArrayList<>(mergedHistory));
-                
+
                 runOnUiThread(() -> Toast.makeText(SettingsActivity.this, "Browser data synced", Toast.LENGTH_SHORT).show());
             }
 
@@ -349,5 +382,46 @@ public class SettingsActivity extends AppCompatActivity {
 
         closeBtn.setOnClickListener(v -> searchEngineDialog.dismiss());
         searchEngineDialog.show();
+    }
+
+    private void showSitePermissionsManager() {
+        SharedPreferences perms = getSharedPreferences("SitePermissions", MODE_PRIVATE);
+        java.util.Map<String, ?> allEntries = perms.getAll();
+
+        if (allEntries.isEmpty()) {
+            Toast.makeText(this, "No site permissions saved", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        List<String> list = new ArrayList<>();
+        List<String> keysList = new ArrayList<>(allEntries.keySet());
+        for (String key : keysList) {
+            Object value = allEntries.get(key);
+            String status = (value instanceof Boolean && (Boolean) value) ? "Allowed" : "Blocked";
+            list.add(key.replace("|", " - ") + ": " + status);
+        }
+
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Site Permissions")
+                .setItems(list.toArray(new String[0]), (dialog, which) -> {
+                    String key = keysList.get(which);
+
+                    new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                            .setTitle("Revoke Permission?")
+                            .setMessage("Do you want to clear this permission for " + key.split("\\|")[0] + "?")
+                            .setPositiveButton("Revoke", (d, w) -> {
+                                perms.edit().remove(key).apply();
+                                Toast.makeText(this, "Permission revoked. Restart the browser tab to apply.", Toast.LENGTH_SHORT).show();
+                                showSitePermissionsManager(); // Refresh
+                            })
+                            .setNegativeButton("Cancel", null)
+                            .show();
+                })
+                .setPositiveButton("Close", null)
+                .setNeutralButton("Clear All", (d, w) -> {
+                    perms.edit().clear().apply();
+                    Toast.makeText(this, "All permissions cleared", Toast.LENGTH_SHORT).show();
+                })
+                .show();
     }
 }

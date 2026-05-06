@@ -11,9 +11,9 @@
     android:background="?attr/selectableItemBackground">
 
     <androidx.cardview.widget.CardView
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        app:cardCornerRadius="24dp"
+        android:layout_width="@dimen/recent_item_size"
+        android:layout_height="@dimen/recent_item_size"
+        app:cardCornerRadius="@dimen/recent_item_radius"
         app:cardElevation="2dp">
 
         <ImageView
@@ -30,7 +30,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
-        android:textSize="10sp"
+        android:textSize="@dimen/recent_item_text_size"
         android:textColor="@color/primary_text"
         android:maxLines="1"
         android:ellipsize="end" />
