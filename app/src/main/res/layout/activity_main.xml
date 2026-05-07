@@ -508,17 +508,19 @@
                 </LinearLayout>
             </androidx.core.widget.NestedScrollView>
 
-            <ProgressBar
-                android:id="@+id/progressBar"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_gravity="top"
-                android:indeterminate="true"
-                android:visibility="gone"
-                android:progressTint="@color/button_background"
-                android:indeterminateTint="@color/button_background" />
         </FrameLayout>
+
+        <ProgressBar
+            android:id="@+id/progressBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="8dp"
+            android:layout_alignParentTop="true"
+            android:indeterminate="true"
+            android:visibility="gone"
+            android:elevation="10dp"
+            android:progressTint="@color/button_background"
+            android:indeterminateTint="@color/button_background" />
 
         <!-- Use a vertical LinearLayout for the bottom UI to fix squishing and visibility issues -->
         <LinearLayout

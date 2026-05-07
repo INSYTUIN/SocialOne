@@ -10,6 +10,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.AnimationUtils;
+import android.webkit.CookieManager;
 import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -153,6 +154,10 @@ public class SettingsActivity extends AppCompatActivity {
         setClickAnimation(btnQuickSync);
         btnQuickSync.setOnClickListener(v -> performQuickSync());
 
+        Button btnClearCookies = findViewById(R.id.btnClearCookies);
+        setClickAnimation(btnClearCookies);
+        btnClearCookies.setOnClickListener(v -> showClearCookiesDialog());
+
         updateAccountUI();
     }
 
@@ -287,6 +292,19 @@ public class SettingsActivity extends AppCompatActivity {
         } catch (JSONException e) {
             e.printStackTrace();
         }
+    }
+
+    private void showClearCookiesDialog() {
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.dialog_clear_cookies_title)
+                .setMessage(R.string.dialog_clear_cookies_message)
+                .setPositiveButton(R.string.delete_all_confirm, (d, w) -> {
+                    CookieManager.getInstance().removeAllCookies(null);
+                    CookieManager.getInstance().flush();
+                    Toast.makeText(this, R.string.cookies_cleared, Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
     }
 
     private void showRestartDialog() {

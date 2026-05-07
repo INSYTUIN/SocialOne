@@ -64,7 +64,7 @@
 
     <!-- Dialog Strings -->
     <string name="dialog_clear_history_title">Clear All History?</string>
-    <string name="dialog_clear_history_message">This will remove all history and clear browser data.</string>
+    <string name="dialog_clear_history_message">This will remove all history. Browser cookies and site data will remain.</string>
     <string name="dialog_clear_all">Clear All</string>
     <string name="dialog_delete_history_title">Delete from History?</string>
     <string name="dialog_image_options_title">Image Options</string>
@@ -125,4 +125,10 @@
     <string name="site_permissions_title">Site Permissions</string>
     <string name="site_permissions_desc">Manage which sites can access your camera, mic, and location.</string>
     <string name="manage_permissions">Manage Permissions</string>
+    <string name="clear_cookies_title">Clear Browser Cookies</string>
+    <string name="clear_cookies_desc">Log out of most sites and clear all browser cookies.</string>
+    <string name="clear_cookies_button">Clear Cookies Now</string>
+    <string name="cookies_cleared">Cookies cleared</string>
+    <string name="dialog_clear_cookies_title">Clear All Cookies?</string>
+    <string name="dialog_clear_cookies_message">You will be logged out of most websites. This cannot be undone.</string>
 </resources>

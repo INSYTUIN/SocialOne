@@ -1859,13 +1859,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 .setTitle(R.string.dialog_clear_history_title)
                 .setMessage(R.string.dialog_clear_history_message)
                 .setPositiveButton(R.string.dialog_clear_all, (d, w) -> {
-                    WebStorage.getInstance().deleteAllData();
-                    CookieManager.getInstance().removeAllCookies(null);
-                    CookieManager.getInstance().flush();
                     for (View view : tabMap.values()) {
                         if (view instanceof WebView) {
                             ((WebView) view).clearHistory();
-                            ((WebView) view).clearCache(true);
                         }
                     }
                     historyList.clear();
@@ -2859,9 +2855,32 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             return;
         }
 
-        // Revert to scroll-position based enabling.
+        String url = wv.getUrl();
+        if (url != null) {
+            // Disable pull-to-refresh on sites with vertical-swipe navigation to avoid conflicts
+            boolean isShortFormVideo = 
+                    url.contains("youtube.com/shorts") ||
+                    url.contains("instagram.com/reels") ||
+                    url.contains("instagram.com/stories") ||
+                    url.contains("tiktok.com") ||
+                    url.contains("facebook.com/reels") ||
+                    url.contains("facebook.com/watch") ||
+                    url.contains("snapchat.com") ||
+                    url.contains("pinterest.com") ||
+                    url.contains("reddit.com") ||
+                    url.contains("threads.net") ||
+                    url.contains("x.com/i/videos") ||
+                    url.contains("twitter.com/i/videos") ||
+                    (url.contains("bing.com") && !url.contains("search?q="));
+
+            if (isShortFormVideo) {
+                swipeRefreshLayout.setEnabled(false);
+                return;
+            }
+        }
+
         // We only enable the pull-to-refresh if the WebView reports it is at the very top.
-        // This allows refresh on all sites while minimizing accidental triggers on Shorts/Instagram.
+        // This allows refresh on all sites while minimizing accidental triggers.
         swipeRefreshLayout.setEnabled(!wv.canScrollVertically(-1));
     }
 
