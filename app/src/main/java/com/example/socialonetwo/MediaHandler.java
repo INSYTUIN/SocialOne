@@ -25,18 +25,35 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * Utility class to handle media detection and extraction from WebViews.
+ * Provides UI for selecting and downloading detected media files.
+ */
 public class MediaHandler {
 
+    /** The context in which the dialogs will be shown. */
     private final Context context;
+    /** Handler for managing file downloads. */
     private final DownloadHandler downloadHandler;
+    /** User agent string used for download requests. */
     private final String userAgent;
 
+    /**
+     * Constructs a MediaHandler.
+     * @param context Activity context.
+     * @param downloadHandler The download manager.
+     * @param userAgent User agent for network requests.
+     */
     public MediaHandler(Context context, DownloadHandler downloadHandler, String userAgent) {
         this.context = context;
         this.downloadHandler = downloadHandler;
         this.userAgent = userAgent;
     }
 
+    /**
+     * Displays a dialog containing a list of media URLs found on the current page.
+     * @param detectedMediaUrls A set of unique media URLs detected.
+     */
     public void showMediaGrabberDialog(Set<String> detectedMediaUrls) {
         if (detectedMediaUrls.isEmpty()) {
             Toast.makeText(context, "No media found on this page.", Toast.LENGTH_SHORT).show();

@@ -3,6 +3,7 @@ package com.example.socialonetwo;
 import android.content.Context;
 import android.net.Uri;
 import android.util.Log;
+import android.widget.Toast;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -13,6 +14,10 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Utility class to manage and apply ad-blocking host lists.
+ * Loads and processes host lists synchronously on the thread it's called from.
+ */
 public class AdBlockerHosts {
 
     private static final String TAG = "AdBlocker";
@@ -30,9 +35,10 @@ public class AdBlockerHosts {
      * Supports basic AdBlock syntax: ||domain^, @@ (exceptions), and path patterns.
      */
     public static void loadFromAssets(Context context) {
-        try {
-            InputStream is = context.getAssets().open("ad_hosts.txt");
-            BufferedReader reader = new BufferedReader(new InputStreamReader(is));
+        Toast.makeText(context, "Ad blocker is initializing...", Toast.LENGTH_SHORT).show();
+        
+        try (InputStream is = context.getAssets().open("ad_hosts.txt");
+             BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
 
             BLOCKED_DOMAINS.clear();
             WHITELIST_DOMAINS.clear();
@@ -91,7 +97,8 @@ public class AdBlockerHosts {
                 }
                 count++;
             }
-            reader.close();
+            
+            Toast.makeText(context, "Ad blocker is ready.", Toast.LENGTH_SHORT).show();
             Log.d(TAG, "Loaded " + count + " filters (Domains: " + BLOCKED_DOMAINS.size() + ", URL Patterns: " + URL_FILTERS.size() + ")");
         } catch (IOException e) {
             Log.e(TAG, "Error loading ad filters", e);

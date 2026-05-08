@@ -51,15 +51,33 @@ import java.util.List;
 
 public class PostComposerActivity extends AppCompatActivity {
 
+    /** Input field for the post's text content. */
     private TextInputEditText etPostContent;
+    /** TextView displaying the current character count of the post. */
     private TextView tvCharCount;
-    private RecyclerView rvMediaPreviews, rvDrafts;
+    /** RecyclerView for displaying previews of selected media. */
+    private RecyclerView rvMediaPreviews;
+    /** RecyclerView for displaying saved post drafts. */
+    private RecyclerView rvDrafts;
+    /** Adapter for the media previews. */
     private MediaPreviewAdapter mediaAdapter;
+    /** Adapter for the post drafts. */
     private DraftAdapter draftAdapter;
+    /** Manager for Firestore database operations. */
     private FirestoreManager firestoreManager;
+    /** List of URIs for media files selected by the user. */
     private List<Uri> selectedMediaUris = new ArrayList<>();
+    /** List of post drafts retrieved from storage. */
     private List<JSONObject> drafts = new ArrayList<>();
-    private TextView tvDraftsTitle, tvMediaPlaceholder, tvDraftsPlaceholder, tvLoadingMessage;
+    /** UI element for the drafts section title. */
+    private TextView tvDraftsTitle;
+    /** Placeholder text shown when no media is selected. */
+    private TextView tvMediaPlaceholder;
+    /** Placeholder text shown when no drafts are available. */
+    private TextView tvDraftsPlaceholder;
+    /** Message displayed on the loading overlay. */
+    private TextView tvLoadingMessage;
+    /** Overlay view shown during long-running operations. */
     private View loadingOverlay;
     private static final String KEY_SELECTED_MEDIA = "selected_media_uris";
     private static final String PREFS_NAME = "PostDraftsPrefs";
@@ -174,6 +192,10 @@ public class PostComposerActivity extends AppCompatActivity {
         handleIncomingIntent();
     }
 
+    /**
+     * Updates the character count display.
+     * @param length The current length of the text.
+     */
     private void updateCharCount(int length) {
         String countText = length + " characters";
         tvCharCount.setText(countText);
@@ -186,6 +208,9 @@ public class PostComposerActivity extends AppCompatActivity {
         handleIncomingIntent();
     }
 
+    /**
+     * Handles intents that share text or media to this activity.
+     */
     private void handleIncomingIntent() {
         Intent intent = getIntent();
         if (intent == null) return;
@@ -258,6 +283,9 @@ public class PostComposerActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Shows a confirmation dialog when the user attempts to exit with unsaved changes.
+     */
     private void showExitConfirmationDialog() {
         View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_save_draft, null);
         Button btnSaveDraft = dialogView.findViewById(R.id.btnSaveDraft);
@@ -289,6 +317,9 @@ public class PostComposerActivity extends AppCompatActivity {
     }
 
 
+    /**
+     * Compiles the post content and launches the system share chooser.
+     */
     private void handleManualShare() {
         String content = etPostContent.getText().toString().trim();
 
@@ -357,11 +388,21 @@ public class PostComposerActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Checks if a URI points to a remote resource (http/https).
+     * @param uri The URI to check.
+     * @return True if remote.
+     */
     private boolean isRemoteUri(Uri uri) {
         String scheme = uri.getScheme();
         return scheme != null && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"));
     }
 
+    /**
+     * Checks if a local URI is currently accessible.
+     * @param uri The URI to check.
+     * @return True if accessible.
+     */
     private boolean isLocalUriAccessible(Uri uri) {
         if (uri == null) return false;
         String scheme = uri.getScheme();
@@ -377,6 +418,11 @@ public class PostComposerActivity extends AppCompatActivity {
         return false;
     }
 
+    /**
+     * Determines a common MIME type for a list of URIs.
+     * @param uris The list of URIs.
+     * @return A MIME type string (e.g., "image/*").
+     */
     private String getCombinedMimeType(List<Uri> uris) {
         if (uris == null || uris.isEmpty()) return "*/*";
         String firstType = getMimeType(uris.get(0));
@@ -391,6 +437,9 @@ public class PostComposerActivity extends AppCompatActivity {
         return baseType + "/*"; // Uniform media types (e.g. all images)
     }
 
+    /**
+     * Saves the current text and media as a draft in internal storage and Firestore.
+     */
     private void saveCurrentAsDraft() {
         String content = etPostContent.getText().toString().trim();
         if (content.isEmpty() && selectedMediaUris.isEmpty()) {
@@ -465,6 +514,12 @@ public class PostComposerActivity extends AppCompatActivity {
         }).start();
     }
 
+    /**
+     * Copies a file from a URI to a destination File.
+     * @param uri The source URI.
+     * @param destFile The destination File.
+     * @return True if successful.
+     */
     private boolean copyUriToFile(Uri uri, File destFile) {
         try (InputStream in = getContentResolver().openInputStream(uri);
              OutputStream out = new FileOutputStream(destFile)) {
@@ -481,6 +536,9 @@ public class PostComposerActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Persists the current drafts list to SharedPreferences.
+     */
     private void saveDraftsToPrefs() {
         JSONArray array = new JSONArray(drafts);
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE)

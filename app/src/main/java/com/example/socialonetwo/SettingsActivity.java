@@ -21,6 +21,9 @@ import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.biometric.BiometricManager;
+import androidx.biometric.BiometricPrompt;
+import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -70,6 +73,7 @@ public class SettingsActivity extends AppCompatActivity {
 
     private MaterialSwitch switchPredictions;
     private AlertDialog searchEngineDialog;
+    private boolean isAuthenticating = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -80,7 +84,11 @@ public class SettingsActivity extends AppCompatActivity {
         View rootView = findViewById(R.id.settingsRoot);
         ViewCompat.setOnApplyWindowInsetsListener(rootView, (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
+            Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
+            
+            // Allow keyboard to overlap the UI during authentication
+            int effectiveImeBottom = isAuthenticating ? 0 : ime.bottom;
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, Math.max(systemBars.bottom, effectiveImeBottom));
             return insets;
         });
 
@@ -140,8 +148,17 @@ public class SettingsActivity extends AppCompatActivity {
         MaterialSwitch switchBiometricLock = findViewById(R.id.switchBiometricLock);
         boolean biometricLockEnabled = sharedPreferences.getBoolean(BIOMETRIC_LOCK_KEY, false);
         switchBiometricLock.setChecked(biometricLockEnabled);
-        switchBiometricLock.setOnCheckedChangeListener((v, isChecked) -> {
-            sharedPreferences.edit().putBoolean(BIOMETRIC_LOCK_KEY, isChecked).apply();
+        switchBiometricLock.setOnClickListener(v -> {
+            boolean isChecked = switchBiometricLock.isChecked();
+            if (isChecked) {
+                // Toggling ON: Show confirmation then verify
+                switchBiometricLock.setChecked(false); // Reset until verified
+                showBiometricEnableConfirmation(switchBiometricLock);
+            } else {
+                // Toggling OFF: Verify first
+                switchBiometricLock.setChecked(true); // Keep it ON until verified
+                verifyBiometricBeforeDisable(switchBiometricLock);
+            }
         });
 
         Button btnManagePermissions = findViewById(R.id.btnManagePermissions);
@@ -400,6 +417,121 @@ public class SettingsActivity extends AppCompatActivity {
 
         closeBtn.setOnClickListener(v -> searchEngineDialog.dismiss());
         searchEngineDialog.show();
+    }
+
+    private void showBiometricEnableConfirmation(MaterialSwitch toggle) {
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Enable Biometric Lock?")
+                .setMessage("You will be required to authenticate with your fingerprint or device credentials every time you open the app.")
+                .setPositiveButton("Enable", (dialog, which) -> {
+                    verifyBiometricBeforeEnable(toggle);
+                })
+                .setNegativeButton("Cancel", (dialog, which) -> {
+                    toggle.setChecked(false);
+                })
+                .setOnCancelListener(dialog -> toggle.setChecked(false))
+                .show();
+    }
+
+    private void verifyBiometricBeforeEnable(MaterialSwitch toggle) {
+        BiometricManager biometricManager = BiometricManager.from(this);
+        int canAuth = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL);
+        
+        if (canAuth != BiometricManager.BIOMETRIC_SUCCESS) {
+            Toast.makeText(this, "Biometric authentication is not available or not set up on this device.", Toast.LENGTH_LONG).show();
+            toggle.setChecked(false);
+            return;
+        }
+
+        isAuthenticating = true;
+        View rootView = findViewById(R.id.settingsRoot);
+        if (rootView != null) ViewCompat.requestApplyInsets(rootView);
+
+        java.util.concurrent.Executor executor = ContextCompat.getMainExecutor(this);
+        BiometricPrompt biometricPrompt = new BiometricPrompt(this, executor, new BiometricPrompt.AuthenticationCallback() {
+            @Override
+            public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
+                super.onAuthenticationError(errorCode, errString);
+                isAuthenticating = false;
+                if (rootView != null) ViewCompat.requestApplyInsets(rootView);
+                Toast.makeText(SettingsActivity.this, "Authentication error: " + errString, Toast.LENGTH_SHORT).show();
+                toggle.setChecked(false);
+            }
+
+            @Override
+            public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
+                super.onAuthenticationSucceeded(result);
+                isAuthenticating = false;
+                if (rootView != null) ViewCompat.requestApplyInsets(rootView);
+                sharedPreferences.edit().putBoolean(BIOMETRIC_LOCK_KEY, true).apply();
+                toggle.setChecked(true);
+                Toast.makeText(SettingsActivity.this, "Biometric lock enabled", Toast.LENGTH_SHORT).show();
+            }
+
+            @Override
+            public void onAuthenticationFailed() {
+                super.onAuthenticationFailed();
+            }
+        });
+
+        BiometricPrompt.PromptInfo promptInfo = new BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Verify Identity")
+                .setSubtitle("Authenticate to enable biometric lock")
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+                .build();
+
+        biometricPrompt.authenticate(promptInfo);
+    }
+
+    private void verifyBiometricBeforeDisable(MaterialSwitch toggle) {
+        BiometricManager biometricManager = BiometricManager.from(this);
+        int canAuth = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL);
+
+        if (canAuth != BiometricManager.BIOMETRIC_SUCCESS) {
+            // If they can't authenticate (e.g. sensor broke), allow disabling to avoid lock-out
+            sharedPreferences.edit().putBoolean(BIOMETRIC_LOCK_KEY, false).apply();
+            toggle.setChecked(false);
+            return;
+        }
+
+        isAuthenticating = true;
+        View rootView = findViewById(R.id.settingsRoot);
+        if (rootView != null) ViewCompat.requestApplyInsets(rootView);
+
+        java.util.concurrent.Executor executor = ContextCompat.getMainExecutor(this);
+        BiometricPrompt biometricPrompt = new BiometricPrompt(this, executor, new BiometricPrompt.AuthenticationCallback() {
+            @Override
+            public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
+                super.onAuthenticationError(errorCode, errString);
+                isAuthenticating = false;
+                if (rootView != null) ViewCompat.requestApplyInsets(rootView);
+                Toast.makeText(SettingsActivity.this, "Authentication required to disable lock", Toast.LENGTH_SHORT).show();
+                toggle.setChecked(true);
+            }
+
+            @Override
+            public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
+                super.onAuthenticationSucceeded(result);
+                isAuthenticating = false;
+                if (rootView != null) ViewCompat.requestApplyInsets(rootView);
+                sharedPreferences.edit().putBoolean(BIOMETRIC_LOCK_KEY, false).apply();
+                toggle.setChecked(false);
+                Toast.makeText(SettingsActivity.this, "Biometric lock disabled", Toast.LENGTH_SHORT).show();
+            }
+
+            @Override
+            public void onAuthenticationFailed() {
+                super.onAuthenticationFailed();
+            }
+        });
+
+        BiometricPrompt.PromptInfo promptInfo = new BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Disable Biometric Lock")
+                .setSubtitle("Authenticate to confirm disabling security")
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+                .build();
+
+        biometricPrompt.authenticate(promptInfo);
     }
 
     private void showSitePermissionsManager() {

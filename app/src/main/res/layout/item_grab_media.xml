@@ -64,7 +64,7 @@
             android:layout_width="24dp"
             android:layout_height="24dp"
             android:layout_marginEnd="8dp"
-            android:src="@android:drawable/stat_sys_download"
+            android:src="@drawable/download"
             app:tint="@color/button_background" />
 
     </LinearLayout>

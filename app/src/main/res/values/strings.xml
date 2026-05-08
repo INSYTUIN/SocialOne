@@ -96,7 +96,7 @@
     <string name="search_engine_desc">Choose the service used for web searches.</string>
     <string name="search_predictions_desc">Show suggestions as you type in the search bar.</string>
     <string name="advance_animations_title">Advance Animations</string>
-    <string name="advance_animations_desc">Enables the dynamic bottom bar. This feature may not work properly on older android devices.</string>
+    <string name="advance_animations_desc">Enables the dynamic bottom bar. This feature is in testing mode and may not work properly.</string>
     <string name="restart_app_message">The app needs to restart to apply this change. Restart now?</string>
     <string name="find_on_page">Find on Page</string>
     <string name="share_qr">Share as QR Code</string>
@@ -121,7 +121,7 @@
     <string name="safe_browsing_title">Safe Browsing</string>
     <string name="safe_browsing_desc">Protects you from dangerous sites and downloads.</string>
     <string name="biometric_lock_title">Biometric Lock</string>
-    <string name="biometric_lock_desc">Lock the app or Incognito tabs behind Fingerprint/Face ID.</string>
+    <string name="biometric_lock_desc">Lock the app using your Password and Fingerprint/Face ID.</string>
     <string name="site_permissions_title">Site Permissions</string>
     <string name="site_permissions_desc">Manage which sites can access your camera, mic, and location.</string>
     <string name="manage_permissions">Manage Permissions</string>
@@ -131,4 +131,39 @@
     <string name="cookies_cleared">Cookies cleared</string>
     <string name="dialog_clear_cookies_title">Clear All Cookies?</string>
     <string name="dialog_clear_cookies_message">You will be logged out of most websites. This cannot be undone.</string>
+
+    <!-- App Info Guide -->
+    <string name="app_info">App Info</string>
+    <string name="guide_title">App Features Guide</string>
+    <string name="guide_dashboard_title">Dashboard &amp; Navigation</string>
+    <string name="guide_dashboard_desc">The home screen shows your recently visited sites and bookmarks. Use the bottom bar to navigate.</string>
+    <string name="guide_search_title">Global Search</string>
+    <string name="guide_search_desc">Search across multiple websites and social platforms simultaneously. Add the websites on the main search tab first to use.</string>
+    <string name="guide_options_title">More Options</string>
+    <string name="guide_options_desc">The three dots provide history, downloads, settings, and media grabbing tools.</string>
+    <string name="guide_composer_title">Post Composer</string>
+    <string name="guide_composer_desc">The center pen button lets you create posts with text and media, and save them as drafts.</string>
+    <string name="guide_tabs_title">Main Search tab</string>
+    <string name="guide_tabs_desc">Click the search icon on the right to manage your tabs, open new ones, or go incognito.</string>
+    <string name="guide_media_title">Media Grabber</string>
+    <string name="guide_media_desc">In the options menu, use \"Grab Media\" to detect and download images or videos from any webpage.</string>
+    <string name="guide_privacy_title">Privacy &amp; Security</string>
+    <string name="guide_privacy_desc">Protect your data with Biometric Lock, Ad Blocker, and Safe Browsing features available in Settings.</string>
+    <string name="guide_quick_access_title">Quick Access Messages</string>
+    <string name="guide_quick_access_desc">Tap the button on the home screen to quickly open your favorite messaging platforms in one place.</string>
+    <string name="guide_forward_title">Forward Navigation</string>
+    <string name="guide_forward_desc">Easily move forward in your browsing history using the forward arrow button in the bottom bar.</string>
+    <string name="got_it">Got It!</string>
+    <string name="telegram">Telegram</string>
+    <string name="discord">Discord</string>
+    <string name="reddit">Reddit</string>
+    <string name="tiktok">TikTok</string>
+    <string name="pinterest">Pinterest</string>
+    <string name="snapchat">Snapchat</string>
+    <string name="linkedin">LinkedIn</string>
+    <string name="twitter">X / Twitter</string>
+    <string name="messenger">Messenger</string>
+    <string name="instagram">Instagram</string>
+    <string name="gmail">Gmail</string>
+    <string name="whatsapp">WhatsApp</string>
 </resources>

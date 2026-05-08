@@ -4,16 +4,18 @@ import android.util.Log;
 
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.firestore.FieldValue;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.SetOptions;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Utility class for managing Firestore operations related to user data.
- * Handles syncing of tabs (siteList) and bookmarks to the cloud.
+ * Optimized for surgical updates and reduced write frequency.
  */
 public class FirestoreManager {
 
@@ -24,8 +26,18 @@ public class FirestoreManager {
     private static final String KEY_HISTORY = "history";
     private static final String KEY_POST_DRAFTS = "post_drafts";
 
+    // Balancing user satisfaction (power use) vs data efficiency (document size)
+    private static final int MAX_TABS = 30;
+    private static final int MAX_BOOKMARKS = 100;
+    private static final int MAX_HISTORY = 50;
+    private static final int MAX_DRAFTS = 15;
+
     private final FirebaseFirestore db;
     private final FirebaseAuth auth;
+    
+    // Simple debouncing for history to save on write costs
+    private long lastHistorySyncTime = 0;
+    private static final long SYNC_THRESHOLD = TimeUnit.MINUTES.toMillis(2);
 
     public interface OnDataLoadedListener {
         void onDataLoaded(List<String> tabs, List<String> bookmarks, List<String> history);
@@ -39,14 +51,41 @@ public class FirestoreManager {
     }
 
     /**
+     * Surgically adds a tab to the cloud.
+     */
+    public void addTab(String url) {
+        FirebaseUser user = auth.getCurrentUser();
+        if (user == null) return;
+        db.collection(COLLECTION_USERS).document(user.getUid())
+                .update(KEY_TABS, FieldValue.arrayUnion(url))
+                .addOnFailureListener(e -> saveTabs(java.util.Collections.singletonList(url))); // Fallback to set if doc doesn't exist
+    }
+
+    /**
+     * Surgically removes a tab from the cloud.
+     */
+    public void removeTab(String url) {
+        FirebaseUser user = auth.getCurrentUser();
+        if (user == null) return;
+        db.collection(COLLECTION_USERS).document(user.getUid())
+                .update(KEY_TABS, FieldValue.arrayRemove(url));
+    }
+
+    /**
      * Saves the current list of tabs to Firestore for the authenticated user.
      */
     public void saveTabs(List<String> tabs) {
         FirebaseUser user = auth.getCurrentUser();
-        if (user == null) return;
+        if (user == null || tabs == null) return;
+
+        List<String> limitedTabs = tabs;
+        if (tabs.size() > MAX_TABS) {
+            // Taking the first 30 tabs (most relevant/recent in this app's tab switcher)
+            limitedTabs = tabs.subList(0, MAX_TABS);
+        }
 
         Map<String, Object> data = new HashMap<>();
-        data.put(KEY_TABS, tabs);
+        data.put(KEY_TABS, limitedTabs);
 
         db.collection(COLLECTION_USERS).document(user.getUid())
                 .set(data, SetOptions.merge())
@@ -59,10 +98,16 @@ public class FirestoreManager {
      */
     public void saveBookmarks(List<String> bookmarks) {
         FirebaseUser user = auth.getCurrentUser();
-        if (user == null) return;
+        if (user == null || bookmarks == null) return;
+
+        List<String> limitedBookmarks = bookmarks;
+        if (bookmarks.size() > MAX_BOOKMARKS) {
+            // Newest bookmarks are added to the front (index 0) in this app
+            limitedBookmarks = bookmarks.subList(0, MAX_BOOKMARKS);
+        }
 
         Map<String, Object> data = new HashMap<>();
-        data.put(KEY_BOOKMARKS, bookmarks);
+        data.put(KEY_BOOKMARKS, limitedBookmarks);
 
         db.collection(COLLECTION_USERS).document(user.getUid())
                 .set(data, SetOptions.merge())
@@ -72,15 +117,23 @@ public class FirestoreManager {
 
     /**
      * Saves the current list of history to Firestore for the authenticated user.
-     * Limits history to the last 50 items to avoid overloading.
+     * Limits history to the last 50 items and uses debouncing to reduce write frequency.
      */
     public void saveHistory(List<String> history) {
         FirebaseUser user = auth.getCurrentUser();
-        if (user == null) return;
+        if (user == null || history == null) return;
+
+        long currentTime = System.currentTimeMillis();
+        // Only sync if significant changes occurred or enough time has passed (2 mins)
+        if (currentTime - lastHistorySyncTime < SYNC_THRESHOLD && history.size() < MAX_HISTORY) {
+            return;
+        }
+        lastHistorySyncTime = currentTime;
 
         List<String> limitedHistory = history;
-        if (history.size() > 50) {
-            limitedHistory = history.subList(0, 50);
+        if (history.size() > MAX_HISTORY) {
+            // Newest history items are added to the front (index 0) in this app
+            limitedHistory = history.subList(0, MAX_HISTORY);
         }
 
         Map<String, Object> data = new HashMap<>();
@@ -98,10 +151,16 @@ public class FirestoreManager {
      */
     public void savePostDrafts(List<String> draftTexts) {
         FirebaseUser user = auth.getCurrentUser();
-        if (user == null) return;
+        if (user == null || draftTexts == null) return;
+
+        List<String> limitedDrafts = draftTexts;
+        if (draftTexts.size() > MAX_DRAFTS) {
+            // Newest drafts are added to the front (index 0) in this app
+            limitedDrafts = draftTexts.subList(0, MAX_DRAFTS);
+        }
 
         Map<String, Object> data = new HashMap<>();
-        data.put(KEY_POST_DRAFTS, draftTexts);
+        data.put(KEY_POST_DRAFTS, limitedDrafts);
 
         db.collection(COLLECTION_USERS).document(user.getUid())
                 .set(data, SetOptions.merge())

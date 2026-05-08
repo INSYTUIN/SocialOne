@@ -47,14 +47,33 @@
                     android:gravity="center_horizontal"
                     android:orientation="vertical">
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="30dp"
-                        android:text="Welcome Home"
-                        android:textColor="@color/button_background"
-                        android:textSize="@dimen/dashboard_title_size"
-                        android:textStyle="bold" />
+                    <RelativeLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_centerHorizontal="true"
+                            android:layout_marginTop="30dp"
+                            android:text="Welcome Home"
+                            android:textColor="@color/button_background"
+                            android:textSize="@dimen/dashboard_title_size"
+                            android:textStyle="bold" />
+
+                        <ImageButton
+                            android:id="@+id/btnAppInfo"
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:layout_alignParentEnd="true"
+                            android:layout_marginTop="26dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="@string/app_info"
+                            android:padding="8dp"
+                            android:scaleType="fitCenter"
+                            android:src="@drawable/info"
+                            app:tint="@color/button_background" />
+                    </RelativeLayout>
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -167,7 +186,8 @@
                 android:fillViewport="true"
                 android:padding="@dimen/dashboard_padding"
                 android:paddingBottom="100dp"
-                android:visibility="gone">
+                android:visibility="gone"
+                tools:visibility="visible">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -227,14 +247,14 @@
                                 <ImageView
                                     android:layout_width="32dp"
                                     android:layout_height="32dp"
-                                    android:contentDescription="LinkedIn"
+                                    android:contentDescription="@string/linkedin"
                                     android:src="@drawable/linkedin" />
 
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="8dp"
-                                    android:text="LinkedIn"
+                                    android:text="@string/linkedin"
                                     android:textStyle="bold" />
                             </LinearLayout>
                         </com.google.android.material.card.MaterialCardView>
@@ -259,14 +279,14 @@
                                 <ImageView
                                     android:layout_width="32dp"
                                     android:layout_height="32dp"
-                                    android:contentDescription="X / Twitter"
+                                    android:contentDescription="@string/twitter"
                                     android:src="@drawable/twitter" />
 
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="8dp"
-                                    android:text="X / Twitter"
+                                    android:text="@string/twitter"
                                     android:textStyle="bold" />
                             </LinearLayout>
                         </com.google.android.material.card.MaterialCardView>
@@ -298,14 +318,14 @@
                                 <ImageView
                                     android:layout_width="32dp"
                                     android:layout_height="32dp"
-                                    android:contentDescription="Messenger"
+                                    android:contentDescription="@string/messenger"
                                     android:src="@drawable/messenger" />
 
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="8dp"
-                                    android:text="Messenger"
+                                    android:text="@string/messenger"
                                     android:textStyle="bold" />
                             </LinearLayout>
                         </com.google.android.material.card.MaterialCardView>
@@ -330,14 +350,14 @@
                                 <ImageView
                                     android:layout_width="32dp"
                                     android:layout_height="32dp"
-                                    android:contentDescription="Instagram"
+                                    android:contentDescription="@string/instagram"
                                     android:src="@drawable/instagram" />
 
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="8dp"
-                                    android:text="Instagram"
+                                    android:text="@string/instagram"
                                     android:textStyle="bold" />
                             </LinearLayout>
                         </com.google.android.material.card.MaterialCardView>
@@ -369,14 +389,14 @@
                                 <ImageView
                                     android:layout_width="32dp"
                                     android:layout_height="32dp"
-                                    android:contentDescription="Gmail"
+                                    android:contentDescription="@string/gmail"
                                     android:src="@drawable/gmail" />
 
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="8dp"
-                                    android:text="Gmail"
+                                    android:text="@string/gmail"
                                     android:textStyle="bold" />
                             </LinearLayout>
                         </com.google.android.material.card.MaterialCardView>
@@ -401,14 +421,227 @@
                                 <ImageView
                                     android:layout_width="32dp"
                                     android:layout_height="32dp"
-                                    android:contentDescription="WhatsApp"
+                                    android:contentDescription="@string/whatsapp"
                                     android:src="@drawable/whatsapp" />
 
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="8dp"
-                                    android:text="WhatsApp"
+                                    android:text="@string/whatsapp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                        </com.google.android.material.card.MaterialCardView>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:id="@+id/cardTelegram"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_margin="4dp"
+                            android:layout_weight="1"
+                            app:cardCornerRadius="12dp"
+                            app:strokeColor="#E0E0E0"
+                            app:strokeWidth="1dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center"
+                                android:orientation="vertical"
+                                android:padding="16dp">
+
+                                <ImageView
+                                    android:layout_width="32dp"
+                                    android:layout_height="32dp"
+                                    android:contentDescription="@string/telegram"
+                                    android:src="@drawable/telegram" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="8dp"
+                                    android:text="@string/telegram"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                        </com.google.android.material.card.MaterialCardView>
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:id="@+id/cardDiscord"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_margin="4dp"
+                            android:layout_weight="1"
+                            app:cardCornerRadius="12dp"
+                            app:strokeColor="#E0E0E0"
+                            app:strokeWidth="1dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center"
+                                android:orientation="vertical"
+                                android:padding="16dp">
+
+                                <ImageView
+                                    android:layout_width="32dp"
+                                    android:layout_height="32dp"
+                                    android:contentDescription="@string/discord"
+                                    android:src="@drawable/discord" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="8dp"
+                                    android:text="@string/discord"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                        </com.google.android.material.card.MaterialCardView>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:id="@+id/cardReddit"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_margin="4dp"
+                            android:layout_weight="1"
+                            app:cardCornerRadius="12dp"
+                            app:strokeColor="#E0E0E0"
+                            app:strokeWidth="1dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center"
+                                android:orientation="vertical"
+                                android:padding="16dp">
+
+                                <ImageView
+                                    android:layout_width="32dp"
+                                    android:layout_height="32dp"
+                                    android:contentDescription="@string/reddit"
+                                    android:src="@drawable/reddit" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="8dp"
+                                    android:text="@string/reddit"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                        </com.google.android.material.card.MaterialCardView>
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:id="@+id/cardTikTok"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_margin="4dp"
+                            android:layout_weight="1"
+                            app:cardCornerRadius="12dp"
+                            app:strokeColor="#E0E0E0"
+                            app:strokeWidth="1dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center"
+                                android:orientation="vertical"
+                                android:padding="16dp">
+
+                                <ImageView
+                                    android:layout_width="32dp"
+                                    android:layout_height="32dp"
+                                    android:contentDescription="@string/tiktok"
+                                    android:src="@drawable/tiktok" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="8dp"
+                                    android:text="@string/tiktok"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                        </com.google.android.material.card.MaterialCardView>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:id="@+id/cardPinterest"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_margin="4dp"
+                            android:layout_weight="1"
+                            app:cardCornerRadius="12dp"
+                            app:strokeColor="#E0E0E0"
+                            app:strokeWidth="1dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center"
+                                android:orientation="vertical"
+                                android:padding="16dp">
+
+                                <ImageView
+                                    android:layout_width="32dp"
+                                    android:layout_height="32dp"
+                                    android:contentDescription="@string/pinterest"
+                                    android:src="@drawable/pinterest" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="8dp"
+                                    android:text="@string/pinterest"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                        </com.google.android.material.card.MaterialCardView>
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:id="@+id/cardSnapchat"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_margin="4dp"
+                            android:layout_weight="1"
+                            app:cardCornerRadius="12dp"
+                            app:strokeColor="#E0E0E0"
+                            app:strokeWidth="1dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center"
+                                android:orientation="vertical"
+                                android:padding="16dp">
+
+                                <ImageView
+                                    android:layout_width="32dp"
+                                    android:layout_height="32dp"
+                                    android:contentDescription="@string/snapchat"
+                                    android:src="@drawable/snapchat" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="8dp"
+                                    android:text="@string/snapchat"
                                     android:textStyle="bold" />
                             </LinearLayout>
                         </com.google.android.material.card.MaterialCardView>
@@ -668,8 +901,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:completionThreshold="1"
-                            android:dropDownAnchor="@id/searchPanel"
-                            android:dropDownHeight="200dp"
+                            android:dropDownHeight="160dp"
                             android:hint="@string/search_hint"
                             android:imeOptions="actionSearch"
                             android:importantForAutofill="no"
@@ -735,8 +967,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:completionThreshold="1"
-                                android:dropDownAnchor="@id/controlsPanel"
-                                android:dropDownHeight="200dp"
+                                android:dropDownHeight="160dp"
                                 android:hint="@string/add_website_hint"
                                 android:imeOptions="actionDone"
                                 android:importantForAutofill="no"
@@ -808,12 +1039,18 @@
                     app:cardCornerRadius="16dp"
                     app:cardElevation="8dp">
 
-                    <LinearLayout
+                    <androidx.core.widget.NestedScrollView
                         android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:background="@color/panel_background"
-                        android:orientation="vertical"
-                        android:padding="@dimen/panel_padding">
+                        android:layout_height="match_parent"
+                        android:overScrollMode="never"
+                        android:scrollbars="none">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:background="@color/panel_background"
+                            android:orientation="vertical"
+                            android:padding="@dimen/panel_padding">
 
                         <TextView
                             android:id="@+id/tvUserStatus"
@@ -913,6 +1150,7 @@
                             android:textColor="@android:color/white"
                             app:cornerRadius="8dp" />
                     </LinearLayout>
+                    </androidx.core.widget.NestedScrollView>
                 </androidx.cardview.widget.CardView>
             </FrameLayout>
 

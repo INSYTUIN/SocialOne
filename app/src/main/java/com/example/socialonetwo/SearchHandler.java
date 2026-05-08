@@ -46,6 +46,9 @@ public class SearchHandler {
         final ArrayAdapter<String> adapter = new ArrayAdapter<>(context, R.layout.item_suggestion, android.R.id.text1, new ArrayList<String>());
         textView.setAdapter(adapter);
         textView.setDropDownBackgroundResource(R.drawable.bg_popup_rounded);
+        
+        // Add a small vertical offset to prevent the dropdown from touching/covering the bar edges
+        textView.setDropDownVerticalOffset(4);
 
         textView.addTextChangedListener(new TextWatcher() {
             @Override

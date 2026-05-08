@@ -12,10 +12,13 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.RenderEffect;
+import android.graphics.Shader;
 import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.net.http.SslError;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -130,21 +133,43 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
     
     // UI Components for WebView and Fullscreen management
-    private FrameLayout webViewContainer, fullscreenContainer;
-    private NestedScrollView homeView, quickAccessMessagesView, incognitoHomeView;
+    /** FrameLayout for holding the active WebView or dashboard view. */
+    private FrameLayout webViewContainer;
+    /** FrameLayout for displaying fullscreen content like videos. */
+    private FrameLayout fullscreenContainer;
+    /** Scrollable view for the main dashboard. */
+    private NestedScrollView homeView;
+    /** Scrollable view for the quick access messaging links. */
+    private NestedScrollView quickAccessMessagesView;
+    /** Scrollable view for the incognito mode dashboard. */
+    private NestedScrollView incognitoHomeView;
+    /** The root layout of the activity. */
     private View mainLayout;
-    private AutoCompleteTextView urlInput, searchInput;
+    /** Input field for entering URLs or search terms in the controls panel. */
+    private AutoCompleteTextView urlInput;
+    /** Input field for global search across multiple platforms. */
+    private AutoCompleteTextView searchInput;
+    /** Horizontal progress bar indicating page loading status. */
     private ProgressBar progressBar;
     
     // Lists and Maps for managing sites, history, and tabs
+    /** List of all currently open site URLs. */
     private List<String> siteList;
+    /** List of recently visited URLs for the history display. */
     private List<String> historyList;
+    /** List of bookmarked URLs. */
     private List<String> bookmarksList;
+    /** Mapping of URLs to their respective View (WebView or ScrollView) instances. */
     private final Map<String, View> tabMap = new HashMap<>();
+    /** Mapping of URLs to their captured bitmap previews for the tab switcher. */
     private final Map<String, Bitmap> tabPreviews = new HashMap<>();
+    /** Set of URLs that are currently in incognito mode. */
     private final Set<String> incognitoTabs = new HashSet<>();
+    /** Mapping of WebViews to URLs that failed to load, used for retry logic. */
     private final Map<WebView, String> failingUrls = new HashMap<>();
+    /** Mapping of WebViews to their respective loading timeout Runnables. */
     private final Map<WebView, Runnable> timeoutRunnables = new HashMap<>();
+    /** Mapping of WebViews to their desktop mode state. */
     private final Map<WebView, Boolean> desktopModeMap = new HashMap<>();
     
     // Adapters for various UI lists
@@ -246,13 +271,20 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private View customView;
 
     private boolean isAuthenticated = false;
+    private boolean isAuthenticating = false;
 
+    /**
+     * Checks if biometric lock is enabled in settings and initiates authentication if needed.
+     */
     private void checkBiometricLock() {
         if (sharedPreferences.getBoolean(BIOMETRIC_LOCK_KEY, false) && !isAuthenticated) {
             showBiometricPrompt();
         }
     }
 
+    /**
+     * Displays the biometric authentication prompt (fingerprint/face/credential).
+     */
     private void showBiometricPrompt() {
         BiometricManager biometricManager = BiometricManager.from(this);
         switch (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL)) {
@@ -267,10 +299,18 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         }
 
         Executor executor = ContextCompat.getMainExecutor(this);
+        isAuthenticating = true;
+        applyBlurEffect(true);
+        View mainView = findViewById(R.id.main);
+        if (mainView != null) ViewCompat.requestApplyInsets(mainView);
+
         BiometricPrompt biometricPrompt = new BiometricPrompt(MainActivity.this, executor, new BiometricPrompt.AuthenticationCallback() {
             @Override
             public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
                 super.onAuthenticationError(errorCode, errString);
+                isAuthenticating = false;
+                applyBlurEffect(false);
+                if (mainView != null) ViewCompat.requestApplyInsets(mainView);
                 if (errorCode == BiometricPrompt.ERROR_USER_CANCELED || errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
                     finish(); // Close app if authentication is canceled
                 }
@@ -280,6 +320,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
                 super.onAuthenticationSucceeded(result);
                 isAuthenticated = true;
+                isAuthenticating = false;
+                applyBlurEffect(false);
+                if (mainView != null) ViewCompat.requestApplyInsets(mainView);
             }
 
             @Override
@@ -295,6 +338,30 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 .build();
 
         biometricPrompt.authenticate(promptInfo);
+    }
+
+    /**
+     * Applies a blur effect to the main layout to obscure content during authentication.
+     * Uses RenderEffect on API 31+ and alpha dimming on older versions.
+     * @param apply True to apply the effect, false to remove it.
+     */
+    private void applyBlurEffect(boolean apply) {
+        View layout = findViewById(R.id.mainLayout);
+        if (layout == null) return;
+
+        if (apply) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                layout.setRenderEffect(RenderEffect.createBlurEffect(80f, 80f, Shader.TileMode.CLAMP));
+            } else {
+                layout.setAlpha(0.1f);
+            }
+        } else {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                layout.setRenderEffect(null);
+            } else {
+                layout.setAlpha(1.0f);
+            }
+        }
     }
 
     @Override
@@ -389,9 +456,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
             boolean isHome = HOME_URL.equals(currentUrl);
 
-            // If Find on Page is active, we ignore the IME insets for the bottom bar 
-            // so it stays behind the keyboard and doesn't squish the UI
-            int effectiveImeBottom = isFindOnPageActive ? 0 : ime.bottom;
+            // If Find on Page is active or we are authenticating, we ignore the IME insets 
+            // so the keyboard (password prompt) appears "above" (over) the UI instead of pushing it.
+            int effectiveImeBottom = (isFindOnPageActive || isAuthenticating) ? 0 : ime.bottom;
             int bottomPadding = Math.max(systemBars.bottom, effectiveImeBottom);
 
             RelativeLayout.LayoutParams lp = (RelativeLayout.LayoutParams) findViewById(R.id.contentWrapper).getLayoutParams();
@@ -461,7 +528,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 bottomUiContainer.setTranslationY(0);
                 isToolbarVisible = true;
             }
-            
+
             return WindowInsetsCompat.CONSUMED;
         });
 
@@ -479,6 +546,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         ImageButton btnDeleteAllTabs = findViewById(R.id.btnDeleteAllTabs);
         ImageButton btnIncognito = findViewById(R.id.btnIncognito);
         ImageButton btnNewTab = findViewById(R.id.btnNewTab);
+        ImageButton btnAppInfo = findViewById(R.id.btnAppInfo);
         controlsPanel = findViewById(R.id.controlsPanel);
         searchPanel = findViewById(R.id.searchPanel);
         moreOptionsPanel = findViewById(R.id.moreOptionsPanel);
@@ -527,6 +595,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         UIUtils.setClickAnimation(this, btnDeleteAllTabs);
         UIUtils.setClickAnimation(this, btnIncognito);
         UIUtils.setClickAnimation(this, btnNewTab);
+        UIUtils.setClickAnimation(this, btnAppInfo);
 
         firestoreManager = new FirestoreManager();
 
@@ -565,6 +634,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             startActivity(intent);
         });
 
+        btnAppInfo.setOnClickListener(v -> showAppInfoDialog());
+
         switchDesktopSite.setOnCheckedChangeListener((buttonView, isChecked) -> {
             View currentView = tabMap.get(currentUrl);
             if (currentView instanceof WebView) {
@@ -584,6 +655,12 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         tabMap.put(HOME_URL, homeView);
         tabMap.put(QUICK_ACCESS_MESSAGES_URL, quickAccessMessagesView);
         tabMap.put(INCOGNITO_HOME_URL, incognitoHomeView);
+
+        // Pre-calculate panel heights to avoid first-time opening glitches
+        mainView.post(() -> {
+            updateTabSwitcherHeight();
+            updateMoreOptionsHeight();
+        });
 
         setupQuickAccessMessages(quickAccessMessagesView);
 
@@ -692,9 +769,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 Toast.makeText(this, "Tab switcher is not available in landscape mode", Toast.LENGTH_SHORT).show();
                 return;
             }
+            hideKeyboard(); // Hide keyboard first to ensure accurate height calculation
             updateTabSwitcherHeight(); // Calculate height before showing to avoid jumps
             beginPanelTransition();
-            
+
             if (tabSwitcherPanel.getVisibility() == View.VISIBLE) {
                 tabSwitcherPanel.setVisibility(View.GONE);
                 boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
@@ -703,7 +781,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             } else {
                 updateCurrentTabPreview();
                 updateTabSwitcherHeight(); // Dynamically fit screen
-                
+
                 // Ensure other overlapping panels are hidden
                 searchPanel.setVisibility(View.GONE);
                 moreOptionsPanel.setVisibility(View.GONE);
@@ -712,10 +790,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 tabSwitcherPanel.setAlpha(1f);
                 tabSwitcherPanel.setScaleX(1f);
                 tabSwitcherPanel.setScaleY(1f);
-                
+
                 tabSwitcherPanel.setVisibility(View.VISIBLE);
                 if (handleTouchArea != null) handleTouchArea.setVisibility(View.GONE);
-                
+
                 tabSwitcherAdapter.setIncognitoTabs(incognitoTabs);
                 tabSwitcherAdapter.setSelectedPosition(currentPosition);
                 tabSwitcherAdapter.notifyDataSetChanged();
@@ -756,7 +834,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 return;
             }
             beginPanelTransition();
-            
+
             if (searchPanel.getVisibility() == View.VISIBLE) {
                 searchPanel.setVisibility(View.GONE);
                 updateDragHandleState();
@@ -772,13 +850,16 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 Toast.makeText(this, "Options are not available in landscape mode", Toast.LENGTH_SHORT).show();
                 return;
             }
+            hideKeyboard(); // Hide keyboard first to ensure accurate height calculation
+            updateMoreOptionsHeight(); // Calculate height before showing
             beginPanelTransition();
-            
+
             if (moreOptionsPanel.getVisibility() == View.VISIBLE) {
                 moreOptionsPanel.setVisibility(View.GONE);
                 updateDragHandleState();
             } else {
                 hideAllPanelsInternal();
+                updateMoreOptionsHeight(); // Dynamically fit screen
                 moreOptionsPanel.setVisibility(View.VISIBLE);
                 updateDragHandleState();
             }
@@ -1262,6 +1343,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         }
     }
 
+    /**
+     * Captures and stores a bitmap preview of the given URL's view for persistence.
+     * @param url The URL associated with the bitmap to save.
+     * @param bitmap The scaled bitmap preview.
+     */
     private void savePreviewToDisk(String url, Bitmap bitmap) {
         executorService.execute(() -> {
             try {
@@ -1281,6 +1367,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         });
     }
 
+    /**
+     * Loads tab previews from internal storage into memory.
+     */
     private void loadPreviewsFromDisk() {
         if (siteList == null) return;
         
@@ -1298,6 +1387,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         }
     }
 
+    /**
+     * Deletes a specific tab preview from internal storage.
+     * @param url The URL of the preview to delete.
+     */
     private void deletePreviewFromDisk(String url) {
         executorService.execute(() -> {
             File dir = new File(getFilesDir(), "tab_previews");
@@ -1309,6 +1402,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         });
     }
 
+    /**
+     * Deletes all saved tab previews from internal storage.
+     */
     private void clearAllPreviewsFromDisk() {
         executorService.execute(() -> {
             File dir = new File(getFilesDir(), "tab_previews");
@@ -1323,6 +1419,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         });
     }
 
+    /**
+     * Captures and saves the state of all active WebViews to disk.
+     */
     private void saveAllWebViews() {
         for (Map.Entry<String, View> entry : tabMap.entrySet()) {
             if (entry.getValue() instanceof WebView) {
@@ -1357,6 +1456,12 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         });
     }
 
+    /**
+     * Restores the state of a WebView from a previously saved bundle on disk.
+     * @param url The URL identifying the saved state.
+     * @param wv The WebView to restore state into.
+     * @return True if state was successfully restored.
+     */
     private boolean restoreWebViewState(String url, WebView wv) {
         if (url == null || url.startsWith("home://") || incognitoTabs.contains(url)) return false;
 
@@ -1382,6 +1487,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         return false;
     }
 
+    /**
+     * Deletes the saved state bundle for a specific URL from disk.
+     * @param url The URL of the state to delete.
+     */
     private void deleteWebViewState(String url) {
         executorService.execute(() -> {
             File file = new File(new File(getFilesDir(), "webview_states"), "state_" + Math.abs(url.hashCode()));
@@ -1389,6 +1498,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         });
     }
 
+    /**
+     * Deletes all saved WebView state bundles from disk.
+     */
     private void clearAllWebViewStates() {
         executorService.execute(() -> {
             File dir = new File(getFilesDir(), "webview_states");
@@ -1692,6 +1804,12 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         View link4 = quickAccessMessagesView.findViewById(R.id.cardInstagram);
         View link5 = quickAccessMessagesView.findViewById(R.id.cardGmail);
         View link6 = quickAccessMessagesView.findViewById(R.id.cardWhatsApp);
+        View link7 = quickAccessMessagesView.findViewById(R.id.cardTelegram);
+        View link8 = quickAccessMessagesView.findViewById(R.id.cardDiscord);
+        View link9 = quickAccessMessagesView.findViewById(R.id.cardReddit);
+        View link10 = quickAccessMessagesView.findViewById(R.id.cardTikTok);
+        View link11 = quickAccessMessagesView.findViewById(R.id.cardPinterest);
+        View link12 = quickAccessMessagesView.findViewById(R.id.cardSnapchat);
 
         UIUtils.setClickAnimation(this, link1);
         UIUtils.setClickAnimation(this, link2);
@@ -1699,6 +1817,12 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         UIUtils.setClickAnimation(this, link4);
         UIUtils.setClickAnimation(this, link5);
         UIUtils.setClickAnimation(this, link6);
+        UIUtils.setClickAnimation(this, link7);
+        UIUtils.setClickAnimation(this, link8);
+        UIUtils.setClickAnimation(this, link9);
+        UIUtils.setClickAnimation(this, link10);
+        UIUtils.setClickAnimation(this, link11);
+        UIUtils.setClickAnimation(this, link12);
 
         link1.setOnClickListener(v -> launchAppOrWeb("com.linkedin.android", "https://www.linkedin.com/messaging/"));
         link2.setOnClickListener(v -> launchAppOrWeb("com.twitter.android", "https://twitter.com/messages"));
@@ -1706,22 +1830,41 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         link4.setOnClickListener(v -> launchAppOrWeb("com.instagram.android", "https://www.instagram.com/direct/inbox/"));
         link5.setOnClickListener(v -> launchAppOrWeb("com.google.android.gm", "https://mail.google.com/mail/u/0/#inbox"));
         link6.setOnClickListener(v -> launchAppOrWeb("com.whatsapp", "https://web.whatsapp.com/"));
+        link7.setOnClickListener(v -> launchAppOrWeb("org.telegram.messenger", "https://web.telegram.org/"));
+        link8.setOnClickListener(v -> launchAppOrWeb("com.discord", "https://discord.com/channels/@me"));
+        link9.setOnClickListener(v -> launchAppOrWeb("com.reddit.frontpage", "https://www.reddit.com/chat"));
+        link10.setOnClickListener(v -> launchAppOrWeb("com.zhiliaoapp.musically", "https://www.tiktok.com/messages"));
+        link11.setOnClickListener(v -> launchAppOrWeb("com.pinterest", "https://www.pinterest.com/notifications/"));
+        link12.setOnClickListener(v -> launchAppOrWeb("com.snapchat.android", "https://web.snapchat.com/"));
     }
 
     /**
-     * Attempts to launch a native app by package name. 
+     * Attempts to launch a native app to a specific URL or its main screen.
      * Falls back to opening the web URL in the app's WebView if the app is not installed.
+     * @param packageName The package name of the native app.
+     * @param webUrl The URL to open as a fallback or deep link.
      */
     private void launchAppOrWeb(String packageName, String webUrl) {
-        PackageManager pm = getPackageManager();
-        Intent intent = pm.getLaunchIntentForPackage(packageName);
-        if (intent != null) {
-            try {
+        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(webUrl));
+        intent.setPackage(packageName);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+        try {
+            // Try to open the specific section in the app first
+            if (intent.resolveActivity(getPackageManager()) != null) {
                 startActivity(intent);
-            } catch (Exception e) {
-                openInWebView(webUrl);
+            } else {
+                // Fallback to just launching the app's main screen
+                Intent launchIntent = getPackageManager().getLaunchIntentForPackage(packageName);
+                if (launchIntent != null) {
+                    startActivity(launchIntent);
+                } else {
+                    // Fallback to internal WebView
+                    openInWebView(webUrl);
+                }
             }
-        } else {
+        } catch (Exception e) {
+            // Ultimate fallback
             openInWebView(webUrl);
         }
     }
@@ -3053,9 +3196,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         if (url != null) {
             // Disable pull-to-refresh on sites with vertical-swipe navigation to avoid conflicts
             boolean isShortFormVideo = 
-                    url.contains("youtube.com/shorts") ||
-                    url.contains("instagram.com/reels") ||
-                    url.contains("instagram.com/stories") ||
+                    url.contains("youtube.com") ||
+                    url.contains("instagram.com") ||
                     url.contains("tiktok.com") ||
                     url.contains("facebook.com/reels") ||
                     url.contains("facebook.com/watch") ||
@@ -3206,40 +3348,110 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private void updateTabSwitcherHeight() {
         if (tabSwitcherPanel == null) return;
 
-        tabSwitcherPanel.post(() -> {
-            View mainView = findViewById(R.id.main);
-            int totalHeight = mainView.getHeight();
-            if (totalHeight == 0) {
-                totalHeight = getResources().getDisplayMetrics().heightPixels;
+        View mainView = findViewById(R.id.main);
+        int totalHeight = mainView.getHeight();
+        if (totalHeight == 0) {
+            totalHeight = getResources().getDisplayMetrics().heightPixels;
+        }
+
+        View controls = findViewById(R.id.controlsPanel);
+
+        // Prioritize toolbar height to prevent squishing
+        int bHeight = (bottomBar != null && bottomBar.getHeight() > 0) ? bottomBar.getHeight() : UIUtils.dpToPx(this, 80);
+        int cHeight = (controls != null && controls.getVisibility() == View.VISIBLE) ? controls.getHeight() : 0;
+        
+        // Get stable system insets to ignore the keyboard height and tab-specific padding in calculations
+        int navBarHeight = 0;
+        int statusBarHeight = 0;
+        WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(mainView);
+        if (insets != null) {
+            statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top;
+            navBarHeight = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
+        } else {
+            statusBarHeight = mainView.getPaddingTop();
+            navBarHeight = bottomUiContainer.getPaddingBottom();
+        }
+        
+        // Account for handle height only if it's visible (Advanced Mode)
+        int hHeight = (handleTouchArea != null && handleTouchArea.getVisibility() == View.VISIBLE) 
+                ? (handleTouchArea.getHeight() > 0 ? handleTouchArea.getHeight() : UIUtils.dpToPx(this, 40))
+                : 0;
+
+        // Consistent Usable Height across all tabs (Total - Status - Nav)
+        int usableHeight = totalHeight - statusBarHeight - navBarHeight;
+        
+        // Panel space = UsableHeight - Toolbar - Active Controls - Handle - Buffer
+        int targetHeight = usableHeight - bHeight - cHeight - hHeight - UIUtils.dpToPx(this, 40);
+
+        if (targetHeight < UIUtils.dpToPx(this, 70)) targetHeight = UIUtils.dpToPx(this, 70);
+
+        ViewGroup.LayoutParams params = tabSwitcherPanel.getLayoutParams();
+        if (params != null) {
+            params.height = targetHeight;
+            tabSwitcherPanel.setLayoutParams(params);
+        }
+    }
+
+    /**
+     * Updates the more options panel height to fit small screens while being scrollable.
+     */
+    private void updateMoreOptionsHeight() {
+        if (moreOptionsPanel == null) return;
+
+        View mainView = findViewById(R.id.main);
+        int totalHeight = mainView.getHeight();
+        if (totalHeight == 0) {
+            totalHeight = getResources().getDisplayMetrics().heightPixels;
+        }
+
+        View controls = findViewById(R.id.controlsPanel);
+        
+        // Prioritize toolbar and system bar space to prevent squishing on small screens
+        int bHeight = (bottomBar != null && bottomBar.getHeight() > 0) ? bottomBar.getHeight() : UIUtils.dpToPx(this, 80);
+        int cHeight = (controls != null && controls.getVisibility() == View.VISIBLE) ? controls.getHeight() : 0;
+        
+        // Get stable system insets to ignore the keyboard height and tab-specific padding in calculations
+        int navBarHeight = 0;
+        int statusBarHeight = 0;
+        WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(mainView);
+        if (insets != null) {
+            statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top;
+            navBarHeight = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
+        } else {
+            statusBarHeight = mainView.getPaddingTop();
+            navBarHeight = bottomUiContainer.getPaddingBottom();
+        }
+        
+        int hHeight = (handleTouchArea != null && handleTouchArea.getVisibility() == View.VISIBLE) 
+                ? (handleTouchArea.getHeight() > 0 ? handleTouchArea.getHeight() : UIUtils.dpToPx(this, 40))
+                : 0;
+
+        // Consistent Usable Height across all tabs (Total - Status - Nav)
+        int usableHeight = totalHeight - statusBarHeight - navBarHeight;
+        
+        // Panel space = UsableHeight - Toolbar - Active Controls - Handle - Buffer
+        int targetHeight = usableHeight - bHeight - cHeight - hHeight - UIUtils.dpToPx(this, 40);
+
+        if (targetHeight < UIUtils.dpToPx(this, 100)) targetHeight = UIUtils.dpToPx(this, 100);
+
+        ViewGroup.LayoutParams params = moreOptionsPanel.getLayoutParams();
+        if (params != null) {
+            // Force measurement of content to decide between WRAP_CONTENT and fixed height
+            int widthSpec = View.MeasureSpec.makeMeasureSpec(Math.max(0, mainView.getWidth() - UIUtils.dpToPx(this, 24)), View.MeasureSpec.EXACTLY);
+            if (mainView.getWidth() == 0) {
+                widthSpec = View.MeasureSpec.makeMeasureSpec(getResources().getDisplayMetrics().widthPixels - UIUtils.dpToPx(this, 24), View.MeasureSpec.EXACTLY);
             }
+            int heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+            moreOptionsPanel.measure(widthSpec, heightSpec);
+            int contentHeight = moreOptionsPanel.getMeasuredHeight();
 
-            View controls = findViewById(R.id.controlsPanel);
-
-            int bHeight = bottomBar != null ? bottomBar.getHeight() : 0;
-            int cHeight = (controls != null && controls.getVisibility() == View.VISIBLE) ? controls.getHeight() : 0;
-            int bottomUiPadding = bottomUiContainer.getPaddingBottom();
-
-            // Subtract BOTH top and bottom system bar insets from mainView.
-            // In normal/home mode the nav bar sits in mainView's bottom padding,
-            // and the status bar always sits in mainView's top padding.
-            // Neither was being removed before, so the panel was computed too tall.
-            int mainViewTopPadding = mainView.getPaddingTop();
-            int mainViewBottomPadding = mainView.getPaddingBottom();
-
-            // True available content height (between status bar and nav bar)
-            int availableHeight = totalHeight - mainViewTopPadding - mainViewBottomPadding;
-
-            // Subtract bottom bar, visible panels, container padding, and a small visual buffer
-            int targetHeight = availableHeight - bHeight - cHeight - bottomUiPadding - UIUtils.dpToPx(this, 40);
-
-            if (targetHeight < UIUtils.dpToPx(this, 150)) targetHeight = UIUtils.dpToPx(this, 150);
-
-            ViewGroup.LayoutParams params = tabSwitcherPanel.getLayoutParams();
-            if (params != null) {
+            if (contentHeight > targetHeight) {
                 params.height = targetHeight;
-                tabSwitcherPanel.setLayoutParams(params);
+            } else {
+                params.height = ViewGroup.LayoutParams.WRAP_CONTENT;
             }
-        });
+            moreOptionsPanel.setLayoutParams(params);
+        }
     }
 
     /**
@@ -3406,6 +3618,28 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         }
     }
 
+    private void showAppInfoDialog() {
+        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_app_info, null);
+        Button btnGotIt = dialogView.findViewById(R.id.btnGotIt);
+        ImageButton btnClose = dialogView.findViewById(R.id.btnCloseGuide);
+
+        UIUtils.setClickAnimation(this, btnGotIt);
+        UIUtils.setClickAnimation(this, btnClose);
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder builder = new com.google.android.material.dialog.MaterialAlertDialogBuilder(this);
+        builder.setView(dialogView);
+        AlertDialog dialog = builder.create();
+
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
+
+        btnGotIt.setOnClickListener(v -> dialog.dismiss());
+        btnClose.setOnClickListener(v -> dialog.dismiss());
+
+        dialog.show();
+    }
+
     private void showFindOnPageDialog() {
         isFindOnPageActive = true;
         View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_caution, null);
@@ -3553,6 +3787,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             tabSwitcherRecyclerView.setLayoutManager(new GridLayoutManager(this, getTabSwitcherSpanCount()));
         }
 
+        updateTabSwitcherHeight();
+        updateMoreOptionsHeight();
+
         if (newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && !isTablet()) {
             boolean panelsToHide = (tabSwitcherPanel != null && tabSwitcherPanel.getVisibility() == View.VISIBLE) ||
                                   (moreOptionsPanel != null && moreOptionsPanel.getVisibility() == View.VISIBLE) ||
@@ -3588,6 +3825,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
     @Override
     protected void onPause() {
+        // Reset authentication state so it locks again on resume if enabled
+        isAuthenticated = false;
+
         // Pause all WebViews and save their state to maintain history across app restarts
         saveAllWebViews();
         for (View v : tabMap.values()) {

@@ -27,10 +27,10 @@
                 android:layout_centerVertical="true"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/cancel"
-                android:scaleX="-1"
+
                 android:padding="12dp"
                 android:scaleType="fitCenter"
-                android:src="@drawable/forward"
+                android:src="@drawable/ex"
                 app:tint="@color/button_background" />
 
             <TextView
@@ -418,7 +418,7 @@
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
+                android:layout_marginBottom="12dp"
                 app:cardCornerRadius="12dp"
                 app:cardElevation="2dp"
                 app:strokeColor="#E0E0E0"
