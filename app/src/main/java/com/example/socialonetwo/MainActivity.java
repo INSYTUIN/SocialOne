@@ -2,7 +2,6 @@ package com.example.socialonetwo;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
-import android.app.DownloadManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -10,7 +9,6 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
-import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -19,9 +17,9 @@ import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Parcel;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.transition.AutoTransition;
@@ -32,18 +30,18 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
-import android.view.Gravity;
-import android.view.animation.AnimationUtils;
+import android.view.ActionMode;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.CookieManager;
 import android.webkit.GeolocationPermissions;
 import android.webkit.JavascriptInterface;
-import android.webkit.MimeTypeMap;
 import android.webkit.PermissionRequest;
 import android.webkit.SslErrorHandler;
-import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
+import android.webkit.WebBackForwardList;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -72,6 +70,7 @@ import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AlertDialog;
 import androidx.cardview.widget.CardView;
@@ -88,6 +87,9 @@ import androidx.biometric.BiometricPrompt;
 import androidx.biometric.BiometricManager;
 import androidx.core.content.ContextCompat;
 
+import com.bumptech.glide.Glide;
+import com.bumptech.glide.request.target.CustomTarget;
+import com.bumptech.glide.request.transition.Transition;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.materialswitch.MaterialSwitch;
 import com.google.android.gms.auth.api.signin.GoogleSignIn;
@@ -98,8 +100,13 @@ import com.google.firebase.auth.FirebaseUser;
 import org.json.JSONArray;
 
 import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.InputStreamReader;
 import java.lang.ref.WeakReference;
 import java.net.HttpURLConnection;
@@ -288,6 +295,48 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 .build();
 
         biometricPrompt.authenticate(promptInfo);
+    }
+
+    @Override
+    public void onActionModeStarted(ActionMode mode) {
+        Menu menu = mode.getMenu();
+        
+        // Add "Share to Post" option to the text selection menu
+        MenuItem shareItem = menu.add(0, Menu.FIRST, 100, "Share to Post");
+        shareItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
+        
+        shareItem.setOnMenuItemClickListener(item -> {
+            View currentView = tabMap.get(currentUrl);
+            if (currentView instanceof WebView) {
+                WebView wv = (WebView) currentView;
+                String sourceUrl = wv.getUrl();
+                
+                // Fetch the selected text via JavaScript
+                wv.evaluateJavascript("(function(){ return window.getSelection().toString(); })()", selectedText -> {
+                    if (selectedText != null && !selectedText.equals("\"\"") && !selectedText.isEmpty()) {
+                        // Clean up JSON string markers from evaluateJavascript
+                        if (selectedText.startsWith("\"") && selectedText.endsWith("\"")) {
+                            selectedText = selectedText.substring(1, selectedText.length() - 1);
+                            selectedText = selectedText.replace("\\\"", "\"").replace("\\\\", "\\");
+                        }
+                        
+                        String finalPost = "\"" + selectedText + "\"\n\nSource: " + sourceUrl;
+                        
+                        Intent intent = new Intent(this, PostComposerActivity.class);
+                        intent.setAction(Intent.ACTION_SEND);
+                        intent.setType("text/plain");
+                        intent.putExtra(Intent.EXTRA_TEXT, finalPost);
+                        postComposerLauncher.launch(intent);
+                    } else {
+                        Toast.makeText(this, "No text selected", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+            mode.finish();
+            return true;
+        });
+        
+        super.onActionModeStarted(mode);
     }
 
     @Override
@@ -1000,9 +1049,15 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                     if (currentView instanceof WebView && ((WebView) currentView).canGoBack()) {
                         ((WebView) currentView).goBack();
                     } else if (currentUrl != null && !currentUrl.equals(HOME_URL) && !currentUrl.equals(QUICK_ACCESS_MESSAGES_URL) && !currentUrl.startsWith(INCOGNITO_HOME_URL)) {
-                        // If we are on a website but at the start of its history, go back to the Home dashboard for this tab
-                        String targetHome = incognitoTabs.contains(currentUrl) ? (INCOGNITO_HOME_URL + "_" + System.currentTimeMillis()) : HOME_URL;
-                        loadInCurrentTab(targetHome);
+                        // If we are on a website but at the start of its history
+                        if (currentPosition == 0) {
+                            // On the first tab, go back to the Home dashboard
+                            String targetHome = incognitoTabs.contains(currentUrl) ? (INCOGNITO_HOME_URL + "_" + System.currentTimeMillis()) : HOME_URL;
+                            loadInCurrentTab(targetHome);
+                        } else {
+                            // On other tabs, just switch back to the main Home tab instead of overwriting this tab
+                            onSiteClick(0);
+                        }
                     } else if (currentPosition != 0) {
                         // If we are on a different tab that is already at Home, switch back to the main first tab
                         onSiteClick(0);
@@ -1268,6 +1323,86 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         });
     }
 
+    private void saveAllWebViews() {
+        for (Map.Entry<String, View> entry : tabMap.entrySet()) {
+            if (entry.getValue() instanceof WebView) {
+                saveWebViewState(entry.getKey(), (WebView) entry.getValue());
+            }
+        }
+    }
+
+    private void saveWebViewState(String url, WebView wv) {
+        if (url == null || url.startsWith("home://") || incognitoTabs.contains(url)) return;
+
+        Bundle bundle = new Bundle();
+        wv.saveState(bundle);
+
+        executorService.execute(() -> {
+            try {
+                File dir = new File(getFilesDir(), "webview_states");
+                if (!dir.exists()) dir.mkdirs();
+
+                File file = new File(dir, "state_" + Math.abs(url.hashCode()));
+                try (FileOutputStream fos = new FileOutputStream(file)) {
+                    Parcel parcel = Parcel.obtain();
+                    bundle.writeToParcel(parcel, 0);
+                    fos.write(parcel.marshall());
+                    parcel.recycle();
+                } catch (IOException e) {
+                    Log.e("MainActivity", "Error saving WebView state", e);
+                }
+            } catch (Exception e) {
+                Log.e("MainActivity", "Error in saveWebViewState", e);
+            }
+        });
+    }
+
+    private boolean restoreWebViewState(String url, WebView wv) {
+        if (url == null || url.startsWith("home://") || incognitoTabs.contains(url)) return false;
+
+        File file = new File(new File(getFilesDir(), "webview_states"), "state_" + Math.abs(url.hashCode()));
+        if (!file.exists()) return false;
+
+        try (FileInputStream fis = new FileInputStream(file)) {
+            byte[] data = new byte[(int) file.length()];
+            fis.read(data);
+            Parcel parcel = Parcel.obtain();
+            parcel.unmarshall(data, 0, data.length);
+            parcel.setDataPosition(0);
+            Bundle bundle = parcel.readBundle(getClassLoader());
+            if (bundle != null) {
+                WebBackForwardList list = wv.restoreState(bundle);
+                parcel.recycle();
+                return list != null;
+            }
+            parcel.recycle();
+        } catch (Exception e) {
+            Log.e("MainActivity", "Error restoring WebView state", e);
+        }
+        return false;
+    }
+
+    private void deleteWebViewState(String url) {
+        executorService.execute(() -> {
+            File file = new File(new File(getFilesDir(), "webview_states"), "state_" + Math.abs(url.hashCode()));
+            if (file.exists()) file.delete();
+        });
+    }
+
+    private void clearAllWebViewStates() {
+        executorService.execute(() -> {
+            File dir = new File(getFilesDir(), "webview_states");
+            if (dir.exists() && dir.isDirectory()) {
+                File[] files = dir.listFiles();
+                if (files != null) {
+                    for (File file : files) {
+                        file.delete();
+                    }
+                }
+            }
+        });
+    }
+
     @Override
     public void onTabClick(int position) {
         onSiteClick(position);
@@ -1297,6 +1432,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 Bitmap preview = tabPreviews.remove(removedUrl);
                 if (preview != null) preview.recycle();
                 deletePreviewFromDisk(removedUrl);
+                deleteWebViewState(removedUrl);
                 
                 if (tab != null) {
                     if (tab instanceof WebView) {
@@ -1540,7 +1676,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             loadInCurrentTab(url);
             urlInput.setText("");
             beginPanelTransition();
-            controlsPanel.setVisibility(View.GONE);
+            // controlsPanel.setVisibility(View.GONE);
             updateDragHandleState();
         }
     }
@@ -1691,6 +1827,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             tabMap.clear();
             tabPreviews.clear();
             clearAllPreviewsFromDisk();
+            clearAllWebViewStates();
             incognitoTabs.clear();
             tabMap.put(HOME_URL, homeView);
             tabMap.put(QUICK_ACCESS_MESSAGES_URL, quickAccessMessagesView);
@@ -1741,7 +1878,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         btnProceed.setOnClickListener(v -> {
             performGlobalSearch(query, selected);
             beginPanelTransition();
-            searchPanel.setVisibility(View.GONE);
+            // searchPanel.setVisibility(View.GONE);
             updateDragHandleState();
             confirmDialog.dismiss();
         });
@@ -2430,12 +2567,66 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                         shareIntent.putExtra(Intent.EXTRA_TEXT, imageUrl);
                         startActivity(Intent.createChooser(shareIntent, "Share Image URL"));
                     } else if (which == 2) {
-                        Intent intent = new Intent(this, PostComposerActivity.class);
-                        intent.putExtra("image_url", imageUrl);
-                        postComposerLauncher.launch(intent);
+                        downloadAndShareImage(imageUrl);
                     }
                 })
                 .show();
+    }
+
+    private void downloadAndShareImage(String imageUrl) {
+        Toast.makeText(this, "Preparing image for post...", Toast.LENGTH_SHORT).show();
+        Glide.with(this)
+                .asFile()
+                .load(imageUrl)
+                .into(new CustomTarget<File>() {
+                    @Override
+                    public void onResourceReady(@NonNull File resource, @Nullable Transition<? super File> transition) {
+                        try {
+                            // Create a temporary file in the cache directory
+                            String fileName = "shared_image_" + System.currentTimeMillis() + ".jpg";
+                            File cacheFile = new File(getCacheDir(), fileName);
+                            
+                            // Copy Glide's cached file to our accessible cache file
+                            copyFile(resource, cacheFile);
+
+                            Uri contentUri = FileProvider.getUriForFile(MainActivity.this, 
+                                    getPackageName() + ".provider", cacheFile);
+
+                            Intent intent = new Intent(MainActivity.this, PostComposerActivity.class);
+                            intent.setAction(Intent.ACTION_SEND);
+                            intent.setType("image/*");
+                            intent.putExtra(Intent.EXTRA_STREAM, contentUri);
+                            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                            
+                            // Also pass the original URL as text if the composer wants it
+                            //intent.putExtra(Intent.EXTRA_TEXT, imageUrl);
+                            
+                            postComposerLauncher.launch(intent);
+                        } catch (IOException e) {
+                            Log.e("MainActivity", "Failed to prepare image", e);
+                            Toast.makeText(MainActivity.this, "Failed to prepare image", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+
+                    @Override
+                    public void onLoadCleared(@Nullable android.graphics.drawable.Drawable placeholder) {}
+
+                    @Override
+                    public void onLoadFailed(@Nullable android.graphics.drawable.Drawable errorDrawable) {
+                        Toast.makeText(MainActivity.this, "Failed to download image", Toast.LENGTH_SHORT).show();
+                    }
+                });
+    }
+
+    private void copyFile(File source, File target) throws IOException {
+        try (InputStream in = new FileInputStream(source);
+             OutputStream out = new FileOutputStream(target)) {
+            byte[] buf = new byte[8192];
+            int length;
+            while ((length = in.read(buf)) > 0) {
+                out.write(buf, 0, length);
+            }
+        }
     }
 
     /**
@@ -2613,7 +2804,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             wv.getSettings().setSavePassword(false);
         }
 
-        wv.loadUrl(url);
+        if (!restoreWebViewState(url, wv)) {
+            wv.loadUrl(url);
+        }
+
         wv.setAlpha(0f);
         wv.setVisibility(View.GONE);
         webViewContainer.addView(wv);
@@ -3394,7 +3588,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
     @Override
     protected void onPause() {
-        // Pause all WebViews to save resources when app is in background
+        // Pause all WebViews and save their state to maintain history across app restarts
+        saveAllWebViews();
         for (View v : tabMap.values()) {
             if (v instanceof WebView) {
                 ((WebView) v).onPause();

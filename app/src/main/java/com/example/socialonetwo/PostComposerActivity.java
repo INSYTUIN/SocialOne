@@ -146,6 +146,7 @@ public class PostComposerActivity extends AppCompatActivity {
 
         loadDrafts();
         updateMediaVisibility();
+        updateCharCount(0);
 
         // Correctly launch the picker for both images and videos
         btnAddMedia.setOnClickListener(v -> pickMediaLauncher.launch(new PickVisualMediaRequest.Builder()
@@ -160,8 +161,7 @@ public class PostComposerActivity extends AppCompatActivity {
 
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
-                String countText = s.length() + " characters";
-                tvCharCount.setText(countText);
+                updateCharCount(s.length());
             }
 
             @Override
@@ -170,16 +170,20 @@ public class PostComposerActivity extends AppCompatActivity {
 
         fabPost.setOnClickListener(v -> handleManualShare());
 
-        // Only handle incoming intent on fresh start, not on configuration change
-        if (savedInstanceState == null) {
-            handleIncomingIntent();
-        }
+        // Handle incoming intent (always do this to ensure data is picked up)
+        handleIncomingIntent();
+    }
+
+    private void updateCharCount(int length) {
+        String countText = length + " characters";
+        tvCharCount.setText(countText);
     }
 
     @Override
-    protected void onSaveInstanceState(@NonNull Bundle outState) {
-        super.onSaveInstanceState(outState);
-        outState.putParcelableArrayList(KEY_SELECTED_MEDIA, new ArrayList<>(selectedMediaUris));
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIncomingIntent();
     }
 
     private void handleIncomingIntent() {
@@ -188,13 +192,17 @@ public class PostComposerActivity extends AppCompatActivity {
 
         String action = intent.getAction();
         String type = intent.getType();
+        boolean dataChanged = false;
 
         // Handle text or explicit image_url
         if (intent.hasExtra("image_url")) {
             String imageUrl = intent.getStringExtra("image_url");
             if (imageUrl != null) {
-                selectedMediaUris.add(Uri.parse(imageUrl));
-                mediaAdapter.notifyDataSetChanged();
+                Uri uri = Uri.parse(imageUrl);
+                if (!selectedMediaUris.contains(uri)) {
+                    selectedMediaUris.add(uri);
+                    dataChanged = true;
+                }
             }
         }
 
@@ -207,8 +215,10 @@ public class PostComposerActivity extends AppCompatActivity {
             } else if (type.startsWith("image/") || type.startsWith("video/")) {
                 Uri sharedUri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
                 if (sharedUri != null) {
-                    selectedMediaUris.add(sharedUri);
-                    mediaAdapter.notifyDataSetChanged();
+                    if (!selectedMediaUris.contains(sharedUri)) {
+                        selectedMediaUris.add(sharedUri);
+                        dataChanged = true;
+                    }
                 }
                 String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
                 if (sharedText != null && etPostContent.length() == 0) {
@@ -219,14 +229,23 @@ public class PostComposerActivity extends AppCompatActivity {
             if (type.startsWith("image/") || type.startsWith("video/")) {
                 ArrayList<Uri> sharedUris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
                 if (sharedUris != null) {
-                    selectedMediaUris.addAll(sharedUris);
-                    mediaAdapter.notifyDataSetChanged();
+                    for (Uri uri : sharedUris) {
+                        if (!selectedMediaUris.contains(uri)) {
+                            selectedMediaUris.add(uri);
+                            dataChanged = true;
+                        }
+                    }
                 }
                 String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
                 if (sharedText != null && etPostContent.length() == 0) {
                     etPostContent.setText(sharedText);
                 }
             }
+        }
+
+        if (dataChanged) {
+            mediaAdapter.notifyDataSetChanged();
+            updateMediaVisibility();
         }
     }
 
