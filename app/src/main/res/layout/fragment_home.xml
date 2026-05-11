@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/homeView"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/home_background"
+    android:clipToPadding="false"
+    android:fillViewport="true"
+    android:paddingBottom="100dp"
+    android:padding="@dimen/dashboard_padding">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerHorizontal="true"
+                android:layout_marginTop="30dp"
+                android:text="SocialOne Home"
+                android:textColor="@color/button_background"
+                android:textSize="@dimen/dashboard_title_size"
+                android:textStyle="bold" />
+
+            <ImageButton
+                android:id="@+id/btnAppInfo"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_alignParentEnd="true"
+                android:layout_marginTop="26dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/app_info"
+                android:padding="8dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/info"
+                app:tint="@color/button_background" />
+        </RelativeLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Your centralized social media dashboard."
+            android:textAlignment="center"
+            android:textColor="@color/primary_text"
+            android:textSize="@dimen/dashboard_subtitle_size" />
+
+        <TextView
+            android:id="@+id/recentTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="32dp"
+            android:text="Recently Visited"
+            android:textColor="@color/button_background"
+            android:textSize="@dimen/dashboard_section_title_size"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/recentPlaceholder"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/recent_placeholder"
+            android:textColor="@color/secondary_text"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:visibility="gone"
+            />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recentRecyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:nestedScrollingEnabled="false"
+            app:layoutManager="androidx.recyclerview.widget.GridLayoutManager"
+            app:spanCount="@integer/dashboard_span_count"
+            tools:listitem="@layout/item_recent" />
+
+        <TextView
+            android:id="@+id/bookmarksTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/bookmarks_title"
+            android:textColor="@color/button_background"
+            android:textSize="@dimen/dashboard_section_title_size"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/bookmarksPlaceholder"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/bookmarks_placeholder"
+            android:textColor="@color/secondary_text"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:visibility="gone" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/bookmarksRecyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:nestedScrollingEnabled="false"
+            app:layoutManager="androidx.recyclerview.widget.GridLayoutManager"
+            app:spanCount="@integer/dashboard_span_count"
+            tools:listitem="@layout/item_recent" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnOpenQuickAccessMessages"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:backgroundTint="@color/button_background"
+            android:padding="12dp"
+            android:text="@string/quick_access_messages"
+            android:textAllCaps="false"
+            android:textColor="@color/button_text"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            app:cornerRadius="12dp"
+            app:icon="@drawable/message"
+            app:iconGravity="textStart"
+            app:iconPadding="12dp"
+            app:iconSize="24dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnOpenWorkspace"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:backgroundTint="@color/button_background"
+            android:padding="12dp"
+            android:text="Workspace"
+            android:textAllCaps="false"
+            android:textColor="@color/button_text"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            app:cornerRadius="12dp"
+            app:icon="@drawable/suitcase"
+            app:iconGravity="textStart"
+            app:iconPadding="12dp"
+            app:iconSize="24dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="40dp"
+            android:text="Use the search button below to open the search bar and add tabs."
+            android:textAlignment="center"
+            android:textColor="@color/secondary_text"
+            android:textSize="12sp" />
+
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

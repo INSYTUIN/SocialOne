@@ -53,6 +53,7 @@ public class SearchSitesAdapter extends RecyclerView.Adapter<SearchSitesAdapter.
      */
     public void updateFilteredList() {
         filteredList.clear();
+        if (siteList == null) return;
         for (String url : siteList) {
             // Exclude internal dashboard pages and special search results
             if (!url.startsWith("home://") && !url.startsWith("Global Search:")) {

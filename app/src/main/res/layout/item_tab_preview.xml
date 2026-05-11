@@ -44,12 +44,23 @@
             app:tint="@android:color/white"
             android:visibility="gone" />
 
+        <ImageView
+            android:id="@+id/workspaceIcon"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_marginStart="12dp"
+            android:layout_centerVertical="false"
+            android:layout_marginTop="10dp"
+            android:src="@drawable/suitcase"
+            app:tint="@android:color/white"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/tvTabTitle"
             android:layout_width="match_parent"
             android:layout_height="40dp"
             android:gravity="center_vertical"
-            android:layout_toEndOf="@id/incognitoIcon"
+            android:layout_toEndOf="@id/workspaceIcon"
             android:paddingStart="8dp"
             android:paddingEnd="48dp"
             android:ellipsize="end"

@@ -40,8 +40,10 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public class SettingsActivity extends AppCompatActivity {
@@ -116,6 +118,7 @@ public class SettingsActivity extends AppCompatActivity {
         switchAdBlocker.setChecked(adBlockerEnabled);
         switchAdBlocker.setOnCheckedChangeListener((buttonView, isChecked) -> {
             sharedPreferences.edit().putBoolean(AD_BLOCKER_KEY, isChecked).apply();
+            Toast.makeText(this, isChecked ? "Ad blocker enabled" : "Ad blocker disabled", Toast.LENGTH_SHORT).show();
         });
 
         boolean advancedAnimEnabled = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
@@ -243,6 +246,36 @@ public class SettingsActivity extends AppCompatActivity {
             }
 
             @Override
+            public void onWorkspacesLoaded(List<Map<String, Object>> cloudWorkspaces) {
+                if (cloudWorkspaces != null) {
+                    // 1. Merge Remote into Local
+                    mergeWorkspaces(cloudWorkspaces);
+
+                    // 2. Upload Merged back to Cloud
+                    String mergedJson = sharedPreferences.getString("WorkspacesList", "[]");
+                    try {
+                        JSONArray array = new JSONArray(mergedJson);
+                        List<Map<String, Object>> workspaces = new ArrayList<>();
+                        for (int i = 0; i < array.length(); i++) {
+                            JSONObject obj = array.getJSONObject(i);
+                            Map<String, Object> map = new HashMap<>();
+                            map.put("name", obj.optString("name"));
+                            JSONArray tabsArr = obj.optJSONArray("tabs");
+                            List<String> tabs = new ArrayList<>();
+                            if (tabsArr != null) {
+                                for (int j = 0; j < tabsArr.length(); j++) tabs.add(tabsArr.getString(j));
+                            }
+                            map.put("tabs", tabs);
+                            workspaces.add(map);
+                        }
+                        firestoreManager.saveWorkspaces(workspaces);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+
+            @Override
             public void onPostDraftsLoaded(List<String> cloudDrafts) {
                 if (cloudDrafts != null) {
                     // 1. Merge Remote Drafts into Local
@@ -311,6 +344,35 @@ public class SettingsActivity extends AppCompatActivity {
         }
     }
 
+    private void mergeWorkspaces(List<Map<String, Object>> cloudWorkspaces) {
+        String localJson = sharedPreferences.getString("WorkspacesList", "[]");
+        try {
+            JSONArray localArray = new JSONArray(localJson);
+            Set<String> localNames = new HashSet<>();
+            for (int i = 0; i < localArray.length(); i++) {
+                localNames.add(localArray.getJSONObject(i).optString("name", ""));
+            }
+
+            boolean changed = false;
+            for (Map<String, Object> remote : cloudWorkspaces) {
+                String name = (String) remote.get("name");
+                if (name != null && !localNames.contains(name)) {
+                    JSONObject newW = new JSONObject();
+                    newW.put("name", name);
+                    newW.put("tabs", new JSONArray((List<String>) remote.get("tabs")));
+                    localArray.put(newW);
+                    changed = true;
+                }
+            }
+
+            if (changed) {
+                sharedPreferences.edit().putString("WorkspacesList", localArray.toString()).apply();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
     private void showClearCookiesDialog() {
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.dialog_clear_cookies_title)
@@ -328,18 +390,19 @@ public class SettingsActivity extends AppCompatActivity {
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle("Restart Required")
                 .setMessage(R.string.restart_app_message)
+                .setCancelable(false)
                 .setPositiveButton("Restart Now", (dialog, which) -> {
-                    android.content.Intent i = getBaseContext().getPackageManager()
-                            .getLaunchIntentForPackage(getBaseContext().getPackageName());
+                    android.content.Intent i = getPackageManager().getLaunchIntentForPackage(getPackageName());
                     if (i != null) {
-                        i.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP | android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                        i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK);
                         startActivity(i);
-                        System.exit(0);
+                        Runtime.getRuntime().exit(0);
                     }
                 })
-                .setNegativeButton(R.string.cancel, null)
                 .show();
     }
+
+
 
     private void setClickAnimation(View view) {
         if (view == null) return;

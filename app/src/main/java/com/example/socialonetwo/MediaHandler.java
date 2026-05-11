@@ -1,9 +1,12 @@
 package com.example.socialonetwo;
 
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -17,10 +20,22 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
+import androidx.core.content.FileProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.bumptech.glide.Glide;
+import com.bumptech.glide.request.target.CustomTarget;
+import com.bumptech.glide.request.transition.Transition;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -88,13 +103,13 @@ public class MediaHandler {
             @Override
             public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
                 String url = urls.get(position);
-                String ext = MimeTypeMap.getFileExtensionFromUrl(url);
+                String ext = getMediaExtension(url);
                 String domain = getDomain(url);
 
                 holder.name.setText("Media " + (position + 1) + " (" + domain + ")");
                 holder.extension.setText(ext.isEmpty() ? "unknown" : ext.toUpperCase());
 
-                com.bumptech.glide.Glide.with(context)
+                Glide.with(context)
                         .load(url)
                         .centerCrop()
                         .placeholder(android.R.drawable.ic_menu_gallery)
@@ -104,7 +119,13 @@ public class MediaHandler {
                 holder.itemView.setOnClickListener(v -> {
                     downloadHandler.downloadFile(url, null, null, userAgent);
                 });
+
+                holder.itemView.setOnLongClickListener(v -> {
+                    showMediaOptions(url);
+                    return true;
+                });
             }
+
 
             @Override
             public int getItemCount() { return urls.size(); }
@@ -148,6 +169,69 @@ public class MediaHandler {
         }
     }
 
+    private void showMediaOptions(String url) {
+        String[] options = {"Download", "Add to Post Creator"};
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+                .setTitle("Media Options")
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) {
+                        downloadHandler.downloadFile(url, null, null, userAgent);
+                    } else if (which == 1) {
+                        addMediaToPost(url);
+                    }
+                })
+                .show();
+    }
+
+    public void addMediaToPost(String imageUrl) {
+        Toast.makeText(context, "Preparing media for post...", Toast.LENGTH_SHORT).show();
+        Glide.with(context)
+                .asFile()
+                .load(imageUrl)
+                .into(new CustomTarget<File>() {
+                    @Override
+                    public void onResourceReady(@NonNull File resource, @Nullable Transition<? super File> transition) {
+                        try {
+                            String fileName = "grabbed_media_" + System.currentTimeMillis() + ".jpg";
+                            File cacheFile = new File(context.getCacheDir(), fileName);
+                            copyFile(resource, cacheFile);
+
+                            Uri contentUri = FileProvider.getUriForFile(context,
+                                    context.getPackageName() + ".provider", cacheFile);
+
+                            Intent intent = new Intent(context, PostComposerActivity.class);
+                            intent.setAction(Intent.ACTION_SEND);
+                            intent.setType("image/*");
+                            intent.putExtra(Intent.EXTRA_STREAM, contentUri);
+                            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                            context.startActivity(intent);
+                        } catch (IOException e) {
+                            Log.e("MediaHandler", "Failed to prepare media", e);
+                            Toast.makeText(context, "Failed to prepare media", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+
+                    @Override
+                    public void onLoadCleared(@Nullable Drawable placeholder) {}
+
+                    @Override
+                    public void onLoadFailed(@Nullable Drawable errorDrawable) {
+                        Toast.makeText(context, "Failed to download media", Toast.LENGTH_SHORT).show();
+                    }
+                });
+    }
+
+    private void copyFile(File source, File target) throws IOException {
+        try (InputStream in = new FileInputStream(source);
+             OutputStream out = new FileOutputStream(target)) {
+            byte[] buf = new byte[8192];
+            int length;
+            while ((length = in.read(buf)) > 0) {
+                out.write(buf, 0, length);
+            }
+        }
+    }
+
     public void showQRCodeDialog(String currentUrl) {
         if (currentUrl == null || currentUrl.startsWith("home://")) {
             Toast.makeText(context, "Cannot share this page", Toast.LENGTH_SHORT).show();
@@ -186,7 +270,36 @@ public class MediaHandler {
         dialog.show();
     }
 
+    private String getMediaExtension(String url) {
+        if (url == null || url.isEmpty()) return "";
+        
+        // Remove query parameters and fragments
+        String cleanUrl = url;
+        int queryIndex = cleanUrl.indexOf('?');
+        if (queryIndex != -1) cleanUrl = cleanUrl.substring(0, queryIndex);
+        int fragmentIndex = cleanUrl.indexOf('#');
+        if (fragmentIndex != -1) cleanUrl = cleanUrl.substring(0, fragmentIndex);
+
+        // Get extension from the cleaned path
+        String extension = MimeTypeMap.getFileExtensionFromUrl(cleanUrl);
+        
+        // If extension is empty, try manual extraction
+        if (extension.isEmpty()) {
+            int lastDot = cleanUrl.lastIndexOf('.');
+            int lastSlash = cleanUrl.lastIndexOf('/');
+            if (lastDot > lastSlash && lastDot != -1) {
+                extension = cleanUrl.substring(lastDot + 1);
+            }
+        }
+        
+        // Sanity check: extensions shouldn't be too long (handle cases like /some.path/without/ext)
+        if (extension.length() > 5) return "";
+
+        return extension.toLowerCase();
+    }
+
     private String getDomain(String url) {
+
         if (url == null || url.startsWith("home://")) return url;
         String domain = url.replace("https://", "").replace("http://", "").replace("www.", "");
         int slashIndex = domain.indexOf('/');

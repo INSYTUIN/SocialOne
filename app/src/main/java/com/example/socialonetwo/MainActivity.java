@@ -10,21 +10,14 @@ import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.RenderEffect;
-import android.graphics.Shader;
 import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.net.http.SslError;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.Parcel;
-import android.text.Editable;
-import android.text.TextWatcher;
 import android.transition.AutoTransition;
 import android.transition.TransitionManager;
 import android.util.Log;
@@ -44,7 +37,6 @@ import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.SslErrorHandler;
 import android.webkit.ValueCallback;
-import android.webkit.WebBackForwardList;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -81,14 +73,11 @@ import androidx.core.content.FileProvider;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
-import androidx.core.widget.NestedScrollView;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import androidx.biometric.BiometricPrompt;
-import androidx.biometric.BiometricManager;
-import androidx.core.content.ContextCompat;
 
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.request.target.CustomTarget;
@@ -99,10 +88,10 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn;
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
-
+import com.google.firebase.crashlytics.FirebaseCrashlytics;
 import org.json.JSONArray;
+import org.json.JSONObject;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -110,19 +99,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.ByteArrayInputStream;
-import java.io.InputStreamReader;
 import java.lang.ref.WeakReference;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.util.concurrent.Executor;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * Main activity for the Social One application.
@@ -131,18 +114,20 @@ import java.util.concurrent.Executors;
  */
 public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSiteClickListener, HistoryAdapter.OnHistoryClickListener, RecentSitesAdapter.OnRecentClickListener, TabSwitcherAdapter.OnTabClickListener {
 
-    
+
     // UI Components for WebView and Fullscreen management
     /** FrameLayout for holding the active WebView or dashboard view. */
     private FrameLayout webViewContainer;
+    /** FrameLayout for holding dashboard fragments. */
+    private FrameLayout fragmentContainer;
     /** FrameLayout for displaying fullscreen content like videos. */
     private FrameLayout fullscreenContainer;
-    /** Scrollable view for the main dashboard. */
-    private NestedScrollView homeView;
-    /** Scrollable view for the quick access messaging links. */
-    private NestedScrollView quickAccessMessagesView;
-    /** Scrollable view for the incognito mode dashboard. */
-    private NestedScrollView incognitoHomeView;
+
+    private HomeFragment homeFragment;
+    private QuickAccessFragment quickAccessFragment;
+    private IncognitoFragment incognitoFragment;
+    private WorkspaceFragment workspaceFragment;
+
     /** The root layout of the activity. */
     private View mainLayout;
     /** Input field for entering URLs or search terms in the controls panel. */
@@ -151,7 +136,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private AutoCompleteTextView searchInput;
     /** Horizontal progress bar indicating page loading status. */
     private ProgressBar progressBar;
-    
+
     // Lists and Maps for managing sites, history, and tabs
     /** List of all currently open site URLs. */
     private List<String> siteList;
@@ -171,17 +156,24 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private final Map<WebView, Runnable> timeoutRunnables = new HashMap<>();
     /** Mapping of WebViews to their desktop mode state. */
     private final Map<WebView, Boolean> desktopModeMap = new HashMap<>();
-    
+    /** Set of URLs that belong to the active workspace. */
+    private final Set<String> workspaceTabs = new HashSet<>();
+    /** Mapping of tab URLs to their parent tab URLs (who opened them). */
+    private final Map<String, String> parentTabMap = new HashMap<>();
+
     // Adapters for various UI lists
     private SitesAdapter sitesAdapter;
     private SearchSitesAdapter searchSitesAdapter;
     private HistoryAdapter historyAdapter;
-    private RecentSitesAdapter recentSitesAdapter;
-    private RecentSitesAdapter bookmarksAdapter;
     private TabSwitcherAdapter tabSwitcherAdapter;
     private RecyclerView tabSwitcherRecyclerView;
     private RecyclerView sitesRecyclerView;
-    
+    private ImageButton btnNormalMode, btnWorkspaceMode;
+    private boolean isWorkspaceTabMode = false;
+    private final List<String> filteredTabList = new ArrayList<>();
+    private final List<Integer> filteredIndices = new ArrayList<>();
+
+
     // Shared Preferences keys and settings
     private SharedPreferences sharedPreferences;
     private static final String PREFS_NAME = "WebWrapperPrefs";
@@ -202,6 +194,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private static final String HOME_URL = "home://dashboard";
     private static final String QUICK_ACCESS_MESSAGES_URL = "home://quickaccess_messages";
     private static final String INCOGNITO_HOME_URL = "home://incognito";
+    private static final String WORKSPACE_URL = "home://workspace";
 
     // UI Panels and interactive elements
     private CardView controlsPanel, searchPanel, moreOptionsPanel, tabSwitcherPanel;
@@ -209,9 +202,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private View btnExpandTabs, handleTouchArea;
     private SwipeRefreshLayout swipeRefreshLayout;
     private MaterialSwitch switchDesktopSite;
-    private TextView recentTitle, bookmarksTitle, tvTabCount, tvUserStatus;
-    private TextView recentPlaceholder, bookmarksPlaceholder;
+    private TextView tvTabCount, tvUserStatus;
     private ViewGroup bottomUiContainer;
+
     private View bottomBar;
     private View dragHandle;
     private boolean isToolbarVisible = true;
@@ -219,8 +212,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private boolean isAnimatingToolbar = false;
     private boolean isFindOnPageActive = false;
     private View.OnScrollChangeListener scrollListener;
-    private Button btnDoGlobalSearch;
-    
+
     private static final int ANIM_DURATION = 100;
     private String userAgent;
     private static final String DESKTOP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -230,9 +222,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private DownloadHandler downloadHandler;
     private MediaHandler mediaHandler;
     private PreferenceManager preferenceManager;
+    private TabStateManager tabStateManager;
+    private SecurityManager securityManager;
     private SearchHandler searchHandler;
     private FirestoreManager firestoreManager;
-    private final ExecutorService executorService = Executors.newSingleThreadExecutor();
     private final Set<String> detectedMediaUrls = new HashSet<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -286,98 +279,46 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
      * Displays the biometric authentication prompt (fingerprint/face/credential).
      */
     private void showBiometricPrompt() {
-        BiometricManager biometricManager = BiometricManager.from(this);
-        switch (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL)) {
-            case BiometricManager.BIOMETRIC_SUCCESS:
-                break;
-            case BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE:
-            case BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE:
-            case BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED:
-                // If biometric is not available or not enrolled, we don't lock the app
-                // to avoid locking out the user.
-                return;
-        }
-
-        Executor executor = ContextCompat.getMainExecutor(this);
         isAuthenticating = true;
-        applyBlurEffect(true);
+        securityManager.applyBlurEffect(findViewById(R.id.mainLayout), true);
         View mainView = findViewById(R.id.main);
         if (mainView != null) ViewCompat.requestApplyInsets(mainView);
 
-        BiometricPrompt biometricPrompt = new BiometricPrompt(MainActivity.this, executor, new BiometricPrompt.AuthenticationCallback() {
+        securityManager.showBiometricPrompt(new SecurityManager.AuthCallback() {
             @Override
-            public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
-                super.onAuthenticationError(errorCode, errString);
+            public void onAuthenticated() {
+                isAuthenticated = true;
                 isAuthenticating = false;
-                applyBlurEffect(false);
+                securityManager.applyBlurEffect(findViewById(R.id.mainLayout), false);
+                if (mainView != null) ViewCompat.requestApplyInsets(mainView);
+            }
+
+            @Override
+            public void onAuthError(int errorCode, @NonNull CharSequence errString) {
+                isAuthenticating = false;
+                securityManager.applyBlurEffect(findViewById(R.id.mainLayout), false);
                 if (mainView != null) ViewCompat.requestApplyInsets(mainView);
                 if (errorCode == BiometricPrompt.ERROR_USER_CANCELED || errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
                     finish(); // Close app if authentication is canceled
                 }
             }
-
-            @Override
-            public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
-                super.onAuthenticationSucceeded(result);
-                isAuthenticated = true;
-                isAuthenticating = false;
-                applyBlurEffect(false);
-                if (mainView != null) ViewCompat.requestApplyInsets(mainView);
-            }
-
-            @Override
-            public void onAuthenticationFailed() {
-                super.onAuthenticationFailed();
-            }
         });
-
-        BiometricPrompt.PromptInfo promptInfo = new BiometricPrompt.PromptInfo.Builder()
-                .setTitle("SocialOne Authentication")
-                .setSubtitle("Authenticate to access the app")
-                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL)
-                .build();
-
-        biometricPrompt.authenticate(promptInfo);
-    }
-
-    /**
-     * Applies a blur effect to the main layout to obscure content during authentication.
-     * Uses RenderEffect on API 31+ and alpha dimming on older versions.
-     * @param apply True to apply the effect, false to remove it.
-     */
-    private void applyBlurEffect(boolean apply) {
-        View layout = findViewById(R.id.mainLayout);
-        if (layout == null) return;
-
-        if (apply) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                layout.setRenderEffect(RenderEffect.createBlurEffect(80f, 80f, Shader.TileMode.CLAMP));
-            } else {
-                layout.setAlpha(0.1f);
-            }
-        } else {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                layout.setRenderEffect(null);
-            } else {
-                layout.setAlpha(1.0f);
-            }
-        }
     }
 
     @Override
     public void onActionModeStarted(ActionMode mode) {
         Menu menu = mode.getMenu();
-        
+
         // Add "Share to Post" option to the text selection menu
         MenuItem shareItem = menu.add(0, Menu.FIRST, 100, "Share to Post");
         shareItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
-        
+
         shareItem.setOnMenuItemClickListener(item -> {
             View currentView = tabMap.get(currentUrl);
             if (currentView instanceof WebView) {
                 WebView wv = (WebView) currentView;
                 String sourceUrl = wv.getUrl();
-                
+
                 // Fetch the selected text via JavaScript
                 wv.evaluateJavascript("(function(){ return window.getSelection().toString(); })()", selectedText -> {
                     if (selectedText != null && !selectedText.equals("\"\"") && !selectedText.isEmpty()) {
@@ -386,9 +327,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                             selectedText = selectedText.substring(1, selectedText.length() - 1);
                             selectedText = selectedText.replace("\\\"", "\"").replace("\\\\", "\\");
                         }
-                        
+
                         String finalPost = "\"" + selectedText + "\"\n\nSource: " + sourceUrl;
-                        
+
                         Intent intent = new Intent(this, PostComposerActivity.class);
                         intent.setAction(Intent.ACTION_SEND);
                         intent.setType("text/plain");
@@ -402,7 +343,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             mode.finish();
             return true;
         });
-        
+
         super.onActionModeStarted(mode);
     }
 
@@ -410,7 +351,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        AdBlockerHosts.loadFromAssets(this);
+        sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+
         EdgeToEdge.enable(this);
+
         setContentView(R.layout.activity_main);
 
         userAgent = WebSettings.getDefaultUserAgent(this);
@@ -418,6 +363,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         downloadHandler = new DownloadHandler(this);
         mediaHandler = new MediaHandler(this, downloadHandler, userAgent);
         preferenceManager = new PreferenceManager(this, firestoreManager);
+        tabStateManager = new TabStateManager(this);
+        securityManager = new SecurityManager(this);
         searchHandler = new SearchHandler(this);
 
         // Initialize Safe Browsing service globally
@@ -435,11 +382,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         dragHandle = findViewById(R.id.dragHandle);
         handleTouchArea = findViewById(R.id.handleTouchArea);
         bottomBar = findViewById(R.id.bottomBar);
-        
+
         webViewContainer = findViewById(R.id.webViewContainer);
-        homeView = findViewById(R.id.homeView);
-        quickAccessMessagesView = findViewById(R.id.quickAccessMessagesView);
-        incognitoHomeView = findViewById(R.id.incognitoHomeView);
+        fragmentContainer = findViewById(R.id.fragmentContainer);
+
 
         // Ensure handle stays visible if content height changes while hidden
         bottomUiContainer.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
@@ -447,41 +393,40 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 bottomUiContainer.setTranslationY(getHiddenTranslation());
             }
         });
-        
+
         // Handle window insets for Edge-to-Edge display
         ViewCompat.setOnApplyWindowInsetsListener(mainView, (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
-            
+
             boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
             boolean isHome = HOME_URL.equals(currentUrl);
 
-            // If Find on Page is active or we are authenticating, we ignore the IME insets 
+            // If Find on Page is active or we are authenticating, we ignore the IME insets
             // so the keyboard (password prompt) appears "above" (over) the UI instead of pushing it.
             int effectiveImeBottom = (isFindOnPageActive || isAuthenticating) ? 0 : ime.bottom;
             int bottomPadding = Math.max(systemBars.bottom, effectiveImeBottom);
 
             RelativeLayout.LayoutParams lp = (RelativeLayout.LayoutParams) findViewById(R.id.contentWrapper).getLayoutParams();
-            
+
             if (!advancedAnim && isHome) {
                 // Home tab in Normal Mode: Treat bottom bar as fixed boundary
                 // This keeps the dashboard perfectly between status and navigation bars
                 v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
                 bottomUiContainer.setPadding(0, 0, 0, Math.max(0, effectiveImeBottom - systemBars.bottom));
                 lp.addRule(RelativeLayout.ABOVE, R.id.bottomUiContainer);
-                
+
                 // Content fits exactly above the bar, no extra bottom padding needed
-                if (homeView != null) homeView.setPadding(UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20));
+                if (fragmentContainer != null) fragmentContainer.setPadding(0, 0, 0, 0);
                 if (webViewContainer != null) webViewContainer.setPadding(0, 0, 0, 0);
-                if (quickAccessMessagesView != null) quickAccessMessagesView.setPadding(UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20));
-                if (incognitoHomeView != null) incognitoHomeView.setPadding(UIUtils.dpToPx(this, 24), UIUtils.dpToPx(this, 24), UIUtils.dpToPx(this, 24), UIUtils.dpToPx(this, 24));
             } else {
+
                 // Other tabs or Advanced Mode: Immersive edge-to-edge drawing
                 // This allows content to draw behind the floating/semi-transparent panels
                 v.setPadding(systemBars.left, systemBars.top, systemBars.right, 0);
                 bottomUiContainer.setPadding(0, 0, 0, bottomPadding);
                 lp.removeRule(RelativeLayout.ABOVE);
-                
+
                 int barHeight = UIUtils.dpToPx(this, 80);
                 int extraContentPadding = bottomPadding + barHeight;
 
@@ -492,14 +437,13 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                     webViewContainer.setPadding(0, 0, 0, webPadding);
                 }
 
-                if (homeView != null) homeView.setPadding(UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20), extraContentPadding);
-                if (quickAccessMessagesView != null) quickAccessMessagesView.setPadding(UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20), extraContentPadding);
-                if (incognitoHomeView != null) incognitoHomeView.setPadding(UIUtils.dpToPx(this, 24), UIUtils.dpToPx(this, 24), UIUtils.dpToPx(this, 24), extraContentPadding);
+                if (fragmentContainer != null) fragmentContainer.setPadding(0, 0, 0, extraContentPadding);
             }
+
 
             boolean isKeyboardVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
             dragHandle.setEnabled(!isKeyboardVisible);
-            
+
             updateDragHandleState();
 
             // Auto-close tab switcher if keyboard pops up to avoid glitches
@@ -539,44 +483,61 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         searchInput = findViewById(R.id.searchInput);
         progressBar = findViewById(R.id.progressBar);
         swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout);
-        
-        btnDoGlobalSearch = findViewById(R.id.btnDoGlobalSearch);
+        swipeRefreshLayout.setDistanceToTriggerSync(UIUtils.dpToPx(this, 200)); // Increased distance to make it less sensitive to accidental pulls
+
+        Button btnDoGlobalSearch = findViewById(R.id.btnDoGlobalSearch);
         btnExpandTabs = findViewById(R.id.btnExpandTabs);
         tvTabCount = findViewById(R.id.tvTabCount);
         ImageButton btnDeleteAllTabs = findViewById(R.id.btnDeleteAllTabs);
         ImageButton btnIncognito = findViewById(R.id.btnIncognito);
         ImageButton btnNewTab = findViewById(R.id.btnNewTab);
-        ImageButton btnAppInfo = findViewById(R.id.btnAppInfo);
+
+        btnNormalMode = findViewById(R.id.btnNormalMode);
+        btnWorkspaceMode = findViewById(R.id.btnWorkspaceMode);
+
+        btnNormalMode.setOnClickListener(v -> {
+            if (isWorkspaceTabMode) {
+                isWorkspaceTabMode = false;
+                updateTabSwitcherList();
+            }
+        });
+
+        btnWorkspaceMode.setOnClickListener(v -> {
+            if (!isWorkspaceTabMode) {
+                isWorkspaceTabMode = true;
+                updateTabSwitcherList();
+            }
+        });
+
         controlsPanel = findViewById(R.id.controlsPanel);
+
         searchPanel = findViewById(R.id.searchPanel);
         moreOptionsPanel = findViewById(R.id.moreOptionsPanel);
         tabSwitcherPanel = findViewById(R.id.tabSwitcherPanel);
         FloatingActionButton toggleButton = findViewById(R.id.toggleControlsButton);
-        
+
         FloatingActionButton globalSearchFab = findViewById(R.id.globalSearchButton);
         FloatingActionButton moreOptionsButton = findViewById(R.id.moreOptionsButton);
         FloatingActionButton btnForward = findViewById(R.id.btnForward);
         FloatingActionButton btnCreatePost = findViewById(R.id.btnCreatePost);
         sitesRecyclerView = findViewById(R.id.sitesRecyclerView);
         RecyclerView searchSitesRecyclerView = findViewById(R.id.searchSitesRecyclerView);
-        RecyclerView recentRecyclerView = findViewById(R.id.recentRecyclerView);
-        RecyclerView bookmarksRecyclerView = findViewById(R.id.bookmarksRecyclerView);
         tabSwitcherRecyclerView = findViewById(R.id.tabSwitcherRecyclerView);
         btnGrabMedia = findViewById(R.id.btnGrabMedia);
-        recentTitle = findViewById(R.id.recentTitle);
-        bookmarksTitle = findViewById(R.id.bookmarksTitle);
+
         tvUserStatus = findViewById(R.id.tvUserStatus);
 
         Button btnViewHistory = findViewById(R.id.btnViewHistory);
+
         Button btnViewDownloads = findViewById(R.id.btnViewDownloads);
         btnFindOnPage = findViewById(R.id.btnFindOnPage);
         Button btnShareQR = findViewById(R.id.btnShareQR);
-        Button btnOpenQuickAccessMessages = findViewById(R.id.btnOpenQuickAccessMessages);
         Button btnSettings = findViewById(R.id.btnSettings);
         Button btnAuthAction = findViewById(R.id.btnAuthAction);
         switchDesktopSite = findViewById(R.id.switchDesktopSite);
 
         // Apply click animation to buttons
+
         UIUtils.setClickAnimation(this, globalSearchFab);
         UIUtils.setClickAnimation(this, moreOptionsButton);
         UIUtils.setClickAnimation(this, btnCreatePost);
@@ -589,19 +550,19 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         UIUtils.setClickAnimation(this, btnShareQR);
         UIUtils.setClickAnimation(this, btnSettings);
         UIUtils.setClickAnimation(this, btnAuthAction);
-        UIUtils.setClickAnimation(this, btnOpenQuickAccessMessages);
         UIUtils.setClickAnimation(this, btnExpandTabs);
+
         UIUtils.setClickAnimation(this, btnGrabMedia);
         UIUtils.setClickAnimation(this, btnDeleteAllTabs);
         UIUtils.setClickAnimation(this, btnIncognito);
         UIUtils.setClickAnimation(this, btnNewTab);
-        UIUtils.setClickAnimation(this, btnAppInfo);
+
 
         firestoreManager = new FirestoreManager();
 
         // Load saved state from PreferenceManager
-        sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        
+
+
         boolean advancedAnimEnabled = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
         if (!advancedAnimEnabled) {
             handleTouchArea.setVisibility(View.GONE);
@@ -618,13 +579,14 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         }
 
         siteList = preferenceManager.loadSites(HOME_URL, QUICK_ACCESS_MESSAGES_URL);
+        workspaceTabs.addAll(preferenceManager.loadWorkspaceTabs());
         historyList = preferenceManager.loadHistory();
         bookmarksList = preferenceManager.loadBookmarks();
-        loadPreviewsFromDisk();
-        AdBlockerHosts.loadFromAssets(this);
+        tabStateManager.loadPreviewsFromDisk(siteList, tabPreviews);
+
 
         // Initial Migration to Cloud
-        firestoreManager.performInitialMigration(siteList, bookmarksList, historyList);
+        firestoreManager.performInitialMigration(siteList, bookmarksList, historyList, preferenceManager.loadWorkspacesList());
 
         searchHandler.setupAutocomplete(urlInput, this::handleUrlInput);
         searchHandler.setupAutocomplete(searchInput, () -> btnDoGlobalSearch.performClick());
@@ -634,7 +596,6 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             startActivity(intent);
         });
 
-        btnAppInfo.setOnClickListener(v -> showAppInfoDialog());
 
         switchDesktopSite.setOnCheckedChangeListener((buttonView, isChecked) -> {
             View currentView = tabMap.get(currentUrl);
@@ -652,9 +613,14 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         siteList.add(0, HOME_URL);
 
         updateTabCountDisplay();
-        tabMap.put(HOME_URL, homeView);
-        tabMap.put(QUICK_ACCESS_MESSAGES_URL, quickAccessMessagesView);
-        tabMap.put(INCOGNITO_HOME_URL, incognitoHomeView);
+        
+        // Dashboard fragments are managed via fragmentContainer and FragmentManager
+        // tabMap will store null for these URLs to indicate they are fragments
+        tabMap.put(HOME_URL, null);
+        tabMap.put(QUICK_ACCESS_MESSAGES_URL, null);
+        tabMap.put(INCOGNITO_HOME_URL, null);
+        tabMap.put(WORKSPACE_URL, null);
+
 
         // Pre-calculate panel heights to avoid first-time opening glitches
         mainView.post(() -> {
@@ -662,37 +628,41 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             updateMoreOptionsHeight();
         });
 
-        setupQuickAccessMessages(quickAccessMessagesView);
 
         // Setup RecyclerView adapters
         sitesAdapter = new SitesAdapter(siteList, this);
         sitesRecyclerView.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false));
         sitesRecyclerView.setAdapter(sitesAdapter);
-        
+
         Set<String> locked = sharedPreferences.getStringSet(LOCKED_SITES_KEY, new HashSet<>());
         sitesAdapter.setLockedSites(locked);
+        sitesAdapter.setWorkspaceTabs(workspaceTabs);
 
         searchSitesAdapter = new SearchSitesAdapter(siteList);
         searchSitesRecyclerView.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false));
         searchSitesRecyclerView.setAdapter(searchSitesAdapter);
 
-        recentSitesAdapter = new RecentSitesAdapter(historyList, 8, this);
-        recentRecyclerView.setLayoutManager(new GridLayoutManager(this, getResources().getInteger(R.integer.dashboard_span_count)));
-        recentRecyclerView.setAdapter(recentSitesAdapter);
-        recentPlaceholder = findViewById(R.id.recentPlaceholder);
-        updateRecentVisibility();
+        tabSwitcherAdapter = new TabSwitcherAdapter(filteredTabList, tabPreviews, new TabSwitcherAdapter.OnTabClickListener() {
+            @Override
+            public void onTabClick(int position) {
+                MainActivity.this.onTabClick(position);
+            }
 
-        bookmarksAdapter = new RecentSitesAdapter(bookmarksList, -1, this);
-        bookmarksAdapter.setFilterUniqueDomains(false);
-        bookmarksRecyclerView.setLayoutManager(new GridLayoutManager(this, getResources().getInteger(R.integer.dashboard_span_count)));
-        bookmarksRecyclerView.setAdapter(bookmarksAdapter);
-        bookmarksPlaceholder = findViewById(R.id.bookmarksPlaceholder);
-        updateBookmarksVisibility();
+            @Override
+            public void onTabClose(int position) {
+                MainActivity.this.onTabClose(position);
+            }
 
-        tabSwitcherAdapter = new TabSwitcherAdapter(siteList, tabPreviews, this);
+            @Override
+            public void onTabLongClick(int position) {
+                MainActivity.this.onTabLongClick(position);
+            }
+        });
+        tabSwitcherAdapter.setWorkspaceTabs(workspaceTabs);
+
         tabSwitcherRecyclerView.setLayoutManager(new GridLayoutManager(this, getTabSwitcherSpanCount()));
         tabSwitcherRecyclerView.setAdapter(tabSwitcherAdapter);
-        
+
         // Enable and customize animations
         androidx.recyclerview.widget.DefaultItemAnimator animator = new androidx.recyclerview.widget.DefaultItemAnimator();
         animator.setAddDuration(ANIM_DURATION);
@@ -714,14 +684,14 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             }
 
             if (!sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false)) return;
-            
+
             if (controlsPanel.getVisibility() == View.VISIBLE ||
-                searchPanel.getVisibility() == View.VISIBLE || 
-                moreOptionsPanel.getVisibility() == View.VISIBLE ||
-                tabSwitcherPanel.getVisibility() == View.VISIBLE) {
+                    searchPanel.getVisibility() == View.VISIBLE ||
+                    moreOptionsPanel.getVisibility() == View.VISIBLE ||
+                    tabSwitcherPanel.getVisibility() == View.VISIBLE) {
                 return;
             }
-            
+
             if (scrollY > oldScrollY + 10 && isToolbarVisible) {
                 toggleToolbar(false);
             } else if (scrollY < oldScrollY - 10 && !isToolbarVisible && !isManualHide) {
@@ -729,9 +699,6 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             }
         };
 
-        homeView.setOnScrollChangeListener(scrollListener);
-        quickAccessMessagesView.setOnScrollChangeListener(scrollListener);
-        incognitoHomeView.setOnScrollChangeListener(scrollListener);
 
         swipeRefreshLayout.setOnRefreshListener(() -> {
             View currentView = tabMap.get(currentUrl);
@@ -780,6 +747,20 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 updateDragHandleState();
             } else {
                 updateCurrentTabPreview();
+
+                // Sync tab mode with current URL on open
+                if (currentUrl != null) {
+                    if (incognitoTabs.contains(currentUrl)) {
+                        isWorkspaceTabMode = false;
+                    } else if (workspaceTabs.contains(currentUrl)) {
+                        isWorkspaceTabMode = true;
+                    } else if (WORKSPACE_URL.equals(currentUrl)) {
+                        isWorkspaceTabMode = true;
+                    } else if (!currentUrl.startsWith("home://")) {
+                        isWorkspaceTabMode = false;
+                    }
+                }
+
                 updateTabSwitcherHeight(); // Dynamically fit screen
 
                 // Ensure other overlapping panels are hidden
@@ -794,38 +775,25 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 tabSwitcherPanel.setVisibility(View.VISIBLE);
                 if (handleTouchArea != null) handleTouchArea.setVisibility(View.GONE);
 
-                tabSwitcherAdapter.setIncognitoTabs(incognitoTabs);
-                tabSwitcherAdapter.setSelectedPosition(currentPosition);
-                tabSwitcherAdapter.notifyDataSetChanged();
+                updateTabSwitcherList();
                 updateDragHandleState();
             }
         });
 
-        btnDeleteAllTabs.setOnClickListener(v -> showDeleteAllDialog(homeView, quickAccessMessagesView));
+        btnDeleteAllTabs.setOnClickListener(v -> showDeleteAllDialog());
+
 
         btnNewTab.setOnClickListener(v -> {
             openNewTab();
         });
 
+        btnNewTab.setOnLongClickListener(v -> {
+            openNewIncognitoTab("Incognito tab created");
+            return true;
+        });
+
         btnIncognito.setOnClickListener(v -> {
-            String incognitoUrl = INCOGNITO_HOME_URL + "_" + System.currentTimeMillis();
-            int insertPos = currentPosition + 1;
-            siteList.add(insertPos, incognitoUrl);
-            incognitoTabs.add(incognitoUrl);
-            saveSites();
-            updateTabCountDisplay();
-            
-            sitesAdapter.setIncognitoTabs(incognitoTabs);
-            tabSwitcherAdapter.setIncognitoTabs(incognitoTabs);
-            
-            sitesAdapter.notifyItemInserted(insertPos);
-            tabSwitcherAdapter.notifyItemInserted(insertPos);
-            
-            searchSitesAdapter.updateFilteredList();
-            
-            // Open the new incognito tab automatically but don't close the panel
-            onSiteClick(insertPos);
-            Toast.makeText(this, "Incognito Tab Opened", Toast.LENGTH_SHORT).show();
+            openNewIncognitoTab("Incognito Tab Opened");
         });
 
         globalSearchFab.setOnClickListener(v -> {
@@ -929,7 +897,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                             .requestEmail()
                             .build();
                     GoogleSignIn.getClient(this, gso).signOut();
-                    
+
+                    Toast.makeText(getApplicationContext(), R.string.logout_success, Toast.LENGTH_SHORT).show();
+
                     // Restart the app to clear all state
                     Intent intent = new Intent(this, MainActivity.class);
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
@@ -946,17 +916,52 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             }
         });
 
-        btnOpenQuickAccessMessages.setOnClickListener(v -> {
-            if (!siteList.contains(QUICK_ACCESS_MESSAGES_URL)) {
-                int insertPos = currentPosition + 1;
-                siteList.add(insertPos, QUICK_ACCESS_MESSAGES_URL);
-                saveSites();
-                updateTabCountDisplay();
-                sitesAdapter.notifyItemInserted(insertPos);
-                searchSitesAdapter.updateFilteredList();
-            }
-            onSiteClick(siteList.indexOf(QUICK_ACCESS_MESSAGES_URL));
-        });
+        // Initialize fragments after UI components are ready
+        if (savedInstanceState == null) {
+            homeFragment = HomeFragment.newInstance(historyList, bookmarksList);
+            quickAccessFragment = new QuickAccessFragment();
+            incognitoFragment = new IncognitoFragment();
+            workspaceFragment = new WorkspaceFragment();
+
+            getSupportFragmentManager().beginTransaction()
+                    .add(R.id.fragmentContainer, homeFragment, "home")
+                    .hide(homeFragment)
+                    .add(R.id.fragmentContainer, quickAccessFragment, "quick")
+                    .hide(quickAccessFragment)
+                    .add(R.id.fragmentContainer, incognitoFragment, "incognito")
+                    .hide(incognitoFragment)
+                    .add(R.id.fragmentContainer, workspaceFragment, "workspace")
+                    .hide(workspaceFragment)
+                    .commit();
+        } else {
+            homeFragment = (HomeFragment) getSupportFragmentManager().findFragmentByTag("home");
+            quickAccessFragment = (QuickAccessFragment) getSupportFragmentManager().findFragmentByTag("quick");
+            incognitoFragment = (IncognitoFragment) getSupportFragmentManager().findFragmentByTag("incognito");
+            workspaceFragment = (WorkspaceFragment) getSupportFragmentManager().findFragmentByTag("workspace");
+        }
+
+        if (homeFragment != null) {
+            homeFragment.setData(historyList, bookmarksList);
+            homeFragment.setListeners(this, v -> showAppInfoDialog(), v -> handleOpenQuickAccessMessages(), v -> handleOpenWorkspace());
+        }
+        if (quickAccessFragment != null) {
+            quickAccessFragment.setListener(this::launchAppOrWeb);
+        }
+        if (workspaceFragment != null) {
+            workspaceFragment.setListener(new WorkspaceFragment.WorkspaceListener() {
+                @Override
+                public void onApplyWorkspace(List<String> tabs) {
+                    applyWorkspace(tabs);
+                }
+
+                @Override
+                public void onClearWorkspace() {
+                    handleClearWorkspace();
+                }
+            });
+        }
+
+
 
         urlInput.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_GO) {
@@ -990,7 +995,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         dragHandle.setOnTouchListener(new View.OnTouchListener() {
             private float startY;
             private boolean isDragging = false;
-            
+
             @SuppressLint("ClickableViewAccessibility")
             @Override
             public boolean onTouch(View v, MotionEvent event) {
@@ -1013,17 +1018,17 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                         // Prevent parent views from intercepting while we interact with the handle
                         v.getParent().requestDisallowInterceptTouchEvent(true);
                         return true;
-                        
+
                     case MotionEvent.ACTION_MOVE:
                         // Optional: Could add real-time translation here for smoother feel
                         return true;
-                        
+
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_CANCEL:
                         if (isDragging) {
                             float endY = event.getRawY();
                             float deltaY = endY - startY;
-                            
+
                             if (deltaY > 100) { // Significant swipe down
                                 isManualHide = true;
                                 toggleToolbar(false);
@@ -1087,10 +1092,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                                     e.printStackTrace();
                                 }
                             }
-                            
+
                             beginPanelTransition();
                             hideAllPanelsInternal();
-                            
+
                             mediaHandler.showMediaGrabberDialog(detectedMediaUrls);
                         }
                 );
@@ -1117,9 +1122,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                     tabSwitcherPanel.setVisibility(View.GONE);
                     updateDragHandleState();
                 } else if (searchPanel.getVisibility() == View.VISIBLE ||
-                    moreOptionsPanel.getVisibility() == View.VISIBLE || 
-                    controlsPanel.getVisibility() == View.VISIBLE) {
-                    
+                        moreOptionsPanel.getVisibility() == View.VISIBLE ||
+                        controlsPanel.getVisibility() == View.VISIBLE) {
+
                     beginPanelTransition();
                     hideAllPanelsInternal();
                     updateDragHandleState();
@@ -1129,14 +1134,25 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                     View currentView = tabMap.get(currentUrl);
                     if (currentView instanceof WebView && ((WebView) currentView).canGoBack()) {
                         ((WebView) currentView).goBack();
-                    } else if (currentUrl != null && !currentUrl.equals(HOME_URL) && !currentUrl.equals(QUICK_ACCESS_MESSAGES_URL) && !currentUrl.startsWith(INCOGNITO_HOME_URL)) {
+                    } else if (currentUrl != null && !currentUrl.equals(HOME_URL) && !currentUrl.equals(QUICK_ACCESS_MESSAGES_URL) && !currentUrl.startsWith(INCOGNITO_HOME_URL) && !currentUrl.equals(WORKSPACE_URL)) {
                         // If we are on a website but at the start of its history
-                        if (currentPosition == 0) {
+                        String parentUrl = parentTabMap.get(currentUrl);
+                        if (parentUrl != null && siteList.contains(parentUrl)) {
+                            onSiteClick(siteList.indexOf(parentUrl));
+                            parentTabMap.remove(currentUrl); // Clear link after using it once
+                        } else if (currentPosition == 0) {
                             // On the first tab, go back to the Home dashboard
                             String targetHome = incognitoTabs.contains(currentUrl) ? (INCOGNITO_HOME_URL + "_" + System.currentTimeMillis()) : HOME_URL;
                             loadInCurrentTab(targetHome);
                         } else {
                             // On other tabs, just switch back to the main Home tab instead of overwriting this tab
+                            onSiteClick(0);
+                        }
+                    } else if (currentUrl != null && !currentUrl.equals(HOME_URL)) {
+                        // We are on a dashboard sub-page (Quick Access, Workspace, etc.)
+                        if (currentPosition == 0) {
+                            loadInCurrentTab(HOME_URL);
+                        } else {
                             onSiteClick(0);
                         }
                     } else if (currentPosition != 0) {
@@ -1178,8 +1194,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
     private int getTabSwitcherSpanCount() {
         boolean isLandscape = getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
-        return isLandscape ? getResources().getInteger(R.integer.tab_switcher_span_count_landscape) 
-                           : getResources().getInteger(R.integer.tab_switcher_span_count_portrait);
+        return isLandscape ? getResources().getInteger(R.integer.tab_switcher_span_count_landscape)
+                : getResources().getInteger(R.integer.tab_switcher_span_count_portrait);
     }
 
     private boolean isTablet() {
@@ -1196,7 +1212,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
      */
     private void updateDragHandleState() {
         if (dragHandle == null) return;
-        
+
         boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
         if (!advancedAnim) {
             dragHandle.setEnabled(false);
@@ -1215,9 +1231,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 isKeyboardVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
             }
         }
-        
+
         float targetAlpha = (isPanelOpen || isKeyboardVisible) ? 0.5f : 1.0f;
-        
+
         // Animate the alpha change for a smoother transition and more reliable visual update
         if (dragHandle.getAlpha() != targetAlpha) {
             dragHandle.animate()
@@ -1236,13 +1252,13 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         AutoTransition transition = new AutoTransition();
         transition.setDuration(ANIM_DURATION);
         TransitionManager.beginDelayedTransition(bottomUiContainer, transition);
-        
+
         // Reset the animation flag after the transition completes
         mainHandler.postDelayed(() -> isAnimatingToolbar = false, ANIM_DURATION + 50);
-        
+
         // Update immediately to reflect intended state change
         updateDragHandleState();
-        
+
         // Update again after a short delay to catch the actual keyboard state change
         mainHandler.postDelayed(this::updateDragHandleState, 150);
         mainHandler.postDelayed(this::updateDragHandleState, 400);
@@ -1251,7 +1267,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private void hideKeyboard() {
         View currentFocus = this.getCurrentFocus();
         View viewToHide = (currentFocus != null) ? currentFocus : findViewById(android.R.id.content);
-        
+
         if (viewToHide != null) {
             InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
             if (imm != null) {
@@ -1272,7 +1288,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
         boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
         if (advancedAnim && handleTouchArea != null) handleTouchArea.setVisibility(View.VISIBLE);
-        
+
         updateDragHandleState();
     }
 
@@ -1282,6 +1298,78 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private void updateTabCountDisplay() {
         if (tvTabCount != null && siteList != null) {
             tvTabCount.setText(String.valueOf(siteList.size()));
+        }
+    }
+
+    private void updateTabSwitcherList() {
+        if (tabSwitcherAdapter == null || tabSwitcherRecyclerView == null) return;
+
+        //TransitionManager.beginDelayedTransition(tabSwitcherRecyclerView, new AutoTransition().setDuration(200));
+        
+        filteredTabList.clear();
+        filteredIndices.clear();
+
+        if (siteList == null) return;
+
+        for (int i = 0; i < siteList.size(); i++) {
+            String url = siteList.get(i);
+            if (url == null) continue;
+
+            boolean isDashboard = url.equals(HOME_URL) || url.equals(QUICK_ACCESS_MESSAGES_URL) || url.equals(WORKSPACE_URL);
+            boolean isWorkspace = workspaceTabs.contains(url);
+            boolean isIncognito = incognitoTabs.contains(url);
+
+            if (isDashboard) {
+                filteredTabList.add(url);
+                filteredIndices.add(i);
+            } else if (isWorkspaceTabMode) {
+                if (isWorkspace && !isIncognito) {
+                    filteredTabList.add(url);
+                    filteredIndices.add(i);
+                }
+            } else {
+                if (!isWorkspace || isIncognito) {
+                    filteredTabList.add(url);
+                    filteredIndices.add(i);
+                }
+            }
+        }
+
+        tabSwitcherAdapter.setFilteredList(filteredTabList);
+        tabSwitcherAdapter.setIncognitoTabs(incognitoTabs);
+
+        // Find current URL's position in filtered list
+        int filteredPos = -1;
+        for (int i = 0; i < filteredIndices.size(); i++) {
+            if (filteredIndices.get(i) == currentPosition) {
+                filteredPos = i;
+                break;
+            }
+        }
+        tabSwitcherAdapter.setSelectedPosition(filteredPos);
+
+        // Update switch UI
+        if (btnNormalMode != null && btnWorkspaceMode != null) {
+            btnNormalMode.setBackgroundResource(isWorkspaceTabMode ? android.R.color.transparent : R.drawable.bg_tab_switch_selected);
+            btnNormalMode.setColorFilter(isWorkspaceTabMode ? androidx.core.content.ContextCompat.getColor(this, R.color.icon_tint) : androidx.core.content.ContextCompat.getColor(this, R.color.button_text));
+
+            btnWorkspaceMode.setBackgroundResource(isWorkspaceTabMode ? R.drawable.bg_tab_switch_selected : android.R.color.transparent);
+            btnWorkspaceMode.setColorFilter(isWorkspaceTabMode ? androidx.core.content.ContextCompat.getColor(this, R.color.button_text) : androidx.core.content.ContextCompat.getColor(this, R.color.icon_tint));
+        }
+    }
+
+    private void updateTabSwitcherItem(int siteListIndex) {
+        if (tabSwitcherAdapter == null) return;
+
+        int filteredPos = -1;
+        for (int i = 0; i < filteredIndices.size(); i++) {
+            if (filteredIndices.get(i) == siteListIndex) {
+                filteredPos = i;
+                break;
+            }
+        }
+        if (filteredPos != -1) {
+            tabSwitcherAdapter.notifyItemChanged(filteredPos);
         }
     }
 
@@ -1311,225 +1399,53 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
      */
     private void updateCurrentTabPreview() {
         if (currentUrl != null) {
-            capturePreview(currentUrl);
+            View viewToCapture = currentUrl.startsWith("home://") ? fragmentContainer : tabMap.get(currentUrl);
+            tabStateManager.capturePreview(currentUrl, viewToCapture, tabPreviews);
         }
     }
 
-    /**
-     * Captures a screenshot of a specific view and stores it as a bitmap.
-     * Also saves the preview to disk for persistence across app restarts.
-     * @param url The URL associated with the view.
-     */
-    private void capturePreview(String url) {
-        View view = tabMap.get(url);
-        if (view != null && view.getWidth() > 0 && view.getHeight() > 0) {
-            try {
-                // Capture original view
-                Bitmap bitmap = Bitmap.createBitmap(view.getWidth(), view.getHeight(), Bitmap.Config.ARGB_8888);
-                Canvas canvas = new Canvas(bitmap);
-                view.draw(canvas);
-                
-                // Scale down for memory and storage efficiency
-                int targetWidth = view.getWidth() / 2;
-                int targetHeight = view.getHeight() / 2;
-                Bitmap scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true);
-                bitmap.recycle();
-                
-                tabPreviews.put(url, scaled);
-                savePreviewToDisk(url, scaled);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    /**
-     * Captures and stores a bitmap preview of the given URL's view for persistence.
-     * @param url The URL associated with the bitmap to save.
-     * @param bitmap The scaled bitmap preview.
-     */
-    private void savePreviewToDisk(String url, Bitmap bitmap) {
-        executorService.execute(() -> {
-            try {
-                File dir = new File(getFilesDir(), "tab_previews");
-                if (!dir.exists()) dir.mkdirs();
-                
-                String fileName = "preview_" + Math.abs(url.hashCode()) + ".png";
-                File file = new File(dir, fileName);
-                
-                java.io.FileOutputStream out = new java.io.FileOutputStream(file);
-                bitmap.compress(Bitmap.CompressFormat.PNG, 70, out);
-                out.flush();
-                out.close();
-            } catch (Exception e) {
-                Log.e("MainActivity", "Error saving preview to disk", e);
-            }
-        });
-    }
-
-    /**
-     * Loads tab previews from internal storage into memory.
-     */
-    private void loadPreviewsFromDisk() {
-        if (siteList == null) return;
-        
-        for (String url : siteList) {
-            File dir = new File(getFilesDir(), "tab_previews");
-            String fileName = "preview_" + Math.abs(url.hashCode()) + ".png";
-            File file = new File(dir, fileName);
-            
-            if (file.exists()) {
-                Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(file.getAbsolutePath());
-                if (bitmap != null) {
-                    tabPreviews.put(url, bitmap);
-                }
-            }
-        }
-    }
-
-    /**
-     * Deletes a specific tab preview from internal storage.
-     * @param url The URL of the preview to delete.
-     */
-    private void deletePreviewFromDisk(String url) {
-        executorService.execute(() -> {
-            File dir = new File(getFilesDir(), "tab_previews");
-            String fileName = "preview_" + Math.abs(url.hashCode()) + ".png";
-            File file = new File(dir, fileName);
-            if (file.exists()) {
-                file.delete();
-            }
-        });
-    }
-
-    /**
-     * Deletes all saved tab previews from internal storage.
-     */
-    private void clearAllPreviewsFromDisk() {
-        executorService.execute(() -> {
-            File dir = new File(getFilesDir(), "tab_previews");
-            if (dir.exists() && dir.isDirectory()) {
-                File[] files = dir.listFiles();
-                if (files != null) {
-                    for (File file : files) {
-                        file.delete();
-                    }
-                }
-            }
-        });
-    }
 
     /**
      * Captures and saves the state of all active WebViews to disk.
      */
     private void saveAllWebViews() {
-        for (Map.Entry<String, View> entry : tabMap.entrySet()) {
-            if (entry.getValue() instanceof WebView) {
-                saveWebViewState(entry.getKey(), (WebView) entry.getValue());
-            }
-        }
-    }
-
-    private void saveWebViewState(String url, WebView wv) {
-        if (url == null || url.startsWith("home://") || incognitoTabs.contains(url)) return;
-
-        Bundle bundle = new Bundle();
-        wv.saveState(bundle);
-
-        executorService.execute(() -> {
-            try {
-                File dir = new File(getFilesDir(), "webview_states");
-                if (!dir.exists()) dir.mkdirs();
-
-                File file = new File(dir, "state_" + Math.abs(url.hashCode()));
-                try (FileOutputStream fos = new FileOutputStream(file)) {
-                    Parcel parcel = Parcel.obtain();
-                    bundle.writeToParcel(parcel, 0);
-                    fos.write(parcel.marshall());
-                    parcel.recycle();
-                } catch (IOException e) {
-                    Log.e("MainActivity", "Error saving WebView state", e);
-                }
-            } catch (Exception e) {
-                Log.e("MainActivity", "Error in saveWebViewState", e);
-            }
-        });
-    }
-
-    /**
-     * Restores the state of a WebView from a previously saved bundle on disk.
-     * @param url The URL identifying the saved state.
-     * @param wv The WebView to restore state into.
-     * @return True if state was successfully restored.
-     */
-    private boolean restoreWebViewState(String url, WebView wv) {
-        if (url == null || url.startsWith("home://") || incognitoTabs.contains(url)) return false;
-
-        File file = new File(new File(getFilesDir(), "webview_states"), "state_" + Math.abs(url.hashCode()));
-        if (!file.exists()) return false;
-
-        try (FileInputStream fis = new FileInputStream(file)) {
-            byte[] data = new byte[(int) file.length()];
-            fis.read(data);
-            Parcel parcel = Parcel.obtain();
-            parcel.unmarshall(data, 0, data.length);
-            parcel.setDataPosition(0);
-            Bundle bundle = parcel.readBundle(getClassLoader());
-            if (bundle != null) {
-                WebBackForwardList list = wv.restoreState(bundle);
-                parcel.recycle();
-                return list != null;
-            }
-            parcel.recycle();
-        } catch (Exception e) {
-            Log.e("MainActivity", "Error restoring WebView state", e);
-        }
-        return false;
-    }
-
-    /**
-     * Deletes the saved state bundle for a specific URL from disk.
-     * @param url The URL of the state to delete.
-     */
-    private void deleteWebViewState(String url) {
-        executorService.execute(() -> {
-            File file = new File(new File(getFilesDir(), "webview_states"), "state_" + Math.abs(url.hashCode()));
-            if (file.exists()) file.delete();
-        });
-    }
-
-    /**
-     * Deletes all saved WebView state bundles from disk.
-     */
-    private void clearAllWebViewStates() {
-        executorService.execute(() -> {
-            File dir = new File(getFilesDir(), "webview_states");
-            if (dir.exists() && dir.isDirectory()) {
-                File[] files = dir.listFiles();
-                if (files != null) {
-                    for (File file : files) {
-                        file.delete();
-                    }
-                }
-            }
-        });
+        tabStateManager.saveAllWebViews(tabMap, incognitoTabs);
     }
 
     @Override
     public void onTabClick(int position) {
-        onSiteClick(position);
-        beginPanelTransition();
-        tabSwitcherPanel.setVisibility(View.GONE);
+        if (position >= 0 && position < filteredIndices.size()) {
+            int realPosition = filteredIndices.get(position);
+            onSiteClick(realPosition);
+            beginPanelTransition();
+            tabSwitcherPanel.setVisibility(View.GONE);
 
-        boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
-        if (advancedAnim && handleTouchArea != null) handleTouchArea.setVisibility(View.VISIBLE);
-        
-        updateDragHandleState();
+            boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
+            if (advancedAnim && handleTouchArea != null) handleTouchArea.setVisibility(View.VISIBLE);
+
+            updateDragHandleState();
+        }
     }
 
     @Override
     public void onTabClose(int position) {
-        if (siteList.size() <= 1) {
+        if (position >= 0 && position < filteredIndices.size()) {
+            int realPosition = filteredIndices.get(position);
+            onTabCloseReal(realPosition);
+            updateTabSwitcherList();
+        }
+    }
+
+    @Override
+    public void onTabLongClick(int position) {
+        if (position >= 0 && position < filteredIndices.size()) {
+            int realPosition = filteredIndices.get(position);
+            onSiteLongClick(realPosition);
+        }
+    }
+    
+    private void onTabCloseReal(int position) {
+        if (siteList == null || siteList.size() <= 1) {
             Toast.makeText(this, "Cannot close the only open tab", Toast.LENGTH_SHORT).show();
             return;
         }
@@ -1543,9 +1459,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 View tab = tabMap.remove(removedUrl);
                 Bitmap preview = tabPreviews.remove(removedUrl);
                 if (preview != null) preview.recycle();
-                deletePreviewFromDisk(removedUrl);
-                deleteWebViewState(removedUrl);
-                
+                tabStateManager.deletePreviewFromDisk(removedUrl);
+                tabStateManager.deleteWebViewState(removedUrl);
+
                 if (tab != null) {
                     if (tab instanceof WebView) {
                         failingUrls.remove((WebView) tab);
@@ -1560,31 +1476,34 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                     }
                 }
             }
-            
+
             // Always ensure the incognito status is cleaned up if this specific URL is unique
             if (!isShared) {
                 incognitoTabs.remove(removedUrl);
+                workspaceTabs.remove(removedUrl);
             }
 
             siteList.remove(position);
+            parentTabMap.remove(removedUrl);
+            parentTabMap.values().removeIf(val -> val.equals(removedUrl));
             saveSites();
             updateTabCountDisplay();
-            
+
             // Update adapters without calling notifyDataSetChanged to allow animations
             sitesAdapter.setIncognitoTabs(incognitoTabs);
-            tabSwitcherAdapter.setIncognitoTabs(incognitoTabs);
-            
+            // tabSwitcherAdapter.setIncognitoTabs(incognitoTabs); // Will be handled in updateTabSwitcherList
+
             sitesAdapter.notifyItemRemoved(position);
-            tabSwitcherAdapter.notifyItemRemoved(position);
+            // tabSwitcherAdapter.notifyItemRemoved(position); // Will be handled in updateTabSwitcherList
 
             // Notify adapters that the item count has changed to update close button visibility
             if (siteList.size() == 1) {
-                tabSwitcherAdapter.notifyItemChanged(0);
+                // tabSwitcherAdapter.notifyItemChanged(0);
             }
-            
+
             // Update search sites adapter if needed
             searchSitesAdapter.updateFilteredList();
-            
+
             if (siteList.isEmpty()) {
                 openNewTab();
             } else if (position == currentPosition) {
@@ -1594,14 +1513,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 currentPosition--;
                 // These now use notifyItemChanged internally
                 sitesAdapter.setSelectedPosition(currentPosition);
-                tabSwitcherAdapter.setSelectedPosition(currentPosition);
+                // tabSwitcherAdapter.setSelectedPosition(currentPosition);
             }
         }
-    }
-
-    @Override
-    public void onTabLongClick(int position) {
-        onSiteLongClick(position);
     }
 
     private boolean isUrlShared(String url, int excludePosition) {
@@ -1674,22 +1588,41 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
     private void openNewTab() {
         int insertPos = currentPosition + 1;
+
         siteList.add(insertPos, HOME_URL);
         saveSites();
         updateTabCountDisplay();
-        
-        sitesAdapter.notifyItemInserted(insertPos);
-        tabSwitcherAdapter.notifyItemInserted(insertPos);
 
-        // If we just went from 1 to 2 tabs, refresh the first tab to show its close button
-        if (siteList.size() == 2) {
-            tabSwitcherAdapter.notifyItemChanged(0);
-        }
-        
+        sitesAdapter.notifyItemInserted(insertPos);
+        updateTabSwitcherList();
+
         searchSitesAdapter.updateFilteredList();
-        
+
         // Open the new tab automatically but don't close the panel
         onSiteClick(insertPos);
+    }
+
+    private void openNewIncognitoTab(String toastMessage) {
+        if (isWorkspaceTabMode) {
+            isWorkspaceTabMode = false;
+        }
+
+        String incognitoUrl = INCOGNITO_HOME_URL + "_" + System.currentTimeMillis();
+        int insertPos = currentPosition + 1;
+        siteList.add(insertPos, incognitoUrl);
+        incognitoTabs.add(incognitoUrl);
+        saveSites();
+        updateTabCountDisplay();
+
+        sitesAdapter.setIncognitoTabs(incognitoTabs);
+        sitesAdapter.notifyItemInserted(insertPos);
+        updateTabSwitcherList();
+        searchSitesAdapter.updateFilteredList();
+
+        onSiteClick(insertPos);
+        if (toastMessage != null) {
+            Toast.makeText(this, toastMessage, Toast.LENGTH_SHORT).show();
+        }
     }
 
     /**
@@ -1700,9 +1633,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         if (currentPosition >= 0 && currentPosition < siteList.size()) {
             String oldUrl = siteList.get(currentPosition);
             boolean isIncognito = incognitoTabs.contains(oldUrl);
-            
+
             // Check if we are navigating to a dashboard layout
-            boolean isTargetHome = url.equals(HOME_URL) || url.equals(QUICK_ACCESS_MESSAGES_URL) || url.startsWith(INCOGNITO_HOME_URL);
+            boolean isTargetHome = url.equals(HOME_URL) || url.equals(QUICK_ACCESS_MESSAGES_URL) || url.startsWith(INCOGNITO_HOME_URL) || url.equals(WORKSPACE_URL);
 
             siteList.set(currentPosition, url);
             if (isIncognito) {
@@ -1719,7 +1652,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 }
             }
 
-            if (!isOldUrlShared && !oldUrl.equals(HOME_URL) && !oldUrl.equals(QUICK_ACCESS_MESSAGES_URL) && !oldUrl.startsWith(INCOGNITO_HOME_URL)) {
+            if (!isOldUrlShared && !oldUrl.equals(HOME_URL) && !oldUrl.equals(QUICK_ACCESS_MESSAGES_URL) && !oldUrl.startsWith(INCOGNITO_HOME_URL) && !oldUrl.equals(WORKSPACE_URL)) {
                 // If switching from WebView to Home, we can clean up the WebView if not shared
                 if (isTargetHome) {
                     View oldTab = tabMap.remove(oldUrl);
@@ -1733,7 +1666,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
             saveSites();
             sitesAdapter.notifyItemChanged(currentPosition);
-            tabSwitcherAdapter.notifyItemChanged(currentPosition);
+            updateTabSwitcherItem(currentPosition);
             searchSitesAdapter.updateFilteredList();
 
             if (isTargetHome) {
@@ -1791,51 +1724,6 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             // controlsPanel.setVisibility(View.GONE);
             updateDragHandleState();
         }
-    }
-
-    /**
-     * Sets up click listeners for the quick access messages links.
-     * @param quickAccessMessagesView The container view for the quick access messages.
-     */
-    private void setupQuickAccessMessages(View quickAccessMessagesView) {
-        View link1 = quickAccessMessagesView.findViewById(R.id.cardLinkedIn);
-        View link2 = quickAccessMessagesView.findViewById(R.id.cardTwitter);
-        View link3 = quickAccessMessagesView.findViewById(R.id.cardFacebook);
-        View link4 = quickAccessMessagesView.findViewById(R.id.cardInstagram);
-        View link5 = quickAccessMessagesView.findViewById(R.id.cardGmail);
-        View link6 = quickAccessMessagesView.findViewById(R.id.cardWhatsApp);
-        View link7 = quickAccessMessagesView.findViewById(R.id.cardTelegram);
-        View link8 = quickAccessMessagesView.findViewById(R.id.cardDiscord);
-        View link9 = quickAccessMessagesView.findViewById(R.id.cardReddit);
-        View link10 = quickAccessMessagesView.findViewById(R.id.cardTikTok);
-        View link11 = quickAccessMessagesView.findViewById(R.id.cardPinterest);
-        View link12 = quickAccessMessagesView.findViewById(R.id.cardSnapchat);
-
-        UIUtils.setClickAnimation(this, link1);
-        UIUtils.setClickAnimation(this, link2);
-        UIUtils.setClickAnimation(this, link3);
-        UIUtils.setClickAnimation(this, link4);
-        UIUtils.setClickAnimation(this, link5);
-        UIUtils.setClickAnimation(this, link6);
-        UIUtils.setClickAnimation(this, link7);
-        UIUtils.setClickAnimation(this, link8);
-        UIUtils.setClickAnimation(this, link9);
-        UIUtils.setClickAnimation(this, link10);
-        UIUtils.setClickAnimation(this, link11);
-        UIUtils.setClickAnimation(this, link12);
-
-        link1.setOnClickListener(v -> launchAppOrWeb("com.linkedin.android", "https://www.linkedin.com/messaging/"));
-        link2.setOnClickListener(v -> launchAppOrWeb("com.twitter.android", "https://twitter.com/messages"));
-        link3.setOnClickListener(v -> launchAppOrWeb("com.facebook.orca", "https://www.facebook.com/messages/"));
-        link4.setOnClickListener(v -> launchAppOrWeb("com.instagram.android", "https://www.instagram.com/direct/inbox/"));
-        link5.setOnClickListener(v -> launchAppOrWeb("com.google.android.gm", "https://mail.google.com/mail/u/0/#inbox"));
-        link6.setOnClickListener(v -> launchAppOrWeb("com.whatsapp", "https://web.whatsapp.com/"));
-        link7.setOnClickListener(v -> launchAppOrWeb("org.telegram.messenger", "https://web.telegram.org/"));
-        link8.setOnClickListener(v -> launchAppOrWeb("com.discord", "https://discord.com/channels/@me"));
-        link9.setOnClickListener(v -> launchAppOrWeb("com.reddit.frontpage", "https://www.reddit.com/chat"));
-        link10.setOnClickListener(v -> launchAppOrWeb("com.zhiliaoapp.musically", "https://www.tiktok.com/messages"));
-        link11.setOnClickListener(v -> launchAppOrWeb("com.pinterest", "https://www.pinterest.com/notifications/"));
-        link12.setOnClickListener(v -> launchAppOrWeb("com.snapchat.android", "https://web.snapchat.com/"));
     }
 
     /**
@@ -1904,7 +1792,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
         permissions.add(Manifest.permission.CAMERA);
         permissions.add(Manifest.permission.RECORD_AUDIO);
-        
+
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.READ_MEDIA_IMAGES);
             permissions.add(Manifest.permission.READ_MEDIA_VIDEO);
@@ -1916,34 +1804,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     }
 
     /**
-     * Updates the visibility of the "Recently Visited" section.
-     */
-    private void updateRecentVisibility() {
-        if (recentPlaceholder != null) {
-            recentPlaceholder.setVisibility(historyList.isEmpty() ? View.VISIBLE : View.GONE);
-        }
-        if (recentTitle != null) {
-            recentTitle.setVisibility(View.VISIBLE);
-        }
-    }
-
-    /**
-     * Updates the visibility of the "Bookmarks" section.
-     */
-    private void updateBookmarksVisibility() {
-        if (bookmarksPlaceholder != null) {
-            bookmarksPlaceholder.setVisibility(bookmarksList.isEmpty() ? View.VISIBLE : View.GONE);
-        }
-        if (bookmarksTitle != null) {
-            bookmarksTitle.setVisibility(View.VISIBLE);
-        }
-    }
-
-    /**
      * Shows a dialog to confirm deleting all recent sites.
      */
-    private void showDeleteAllDialog(View homeView, View quickAccessMessagesView) {
+    private void showDeleteAllDialog() {
         View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_delete_all, null);
+
         Button btnConfirm = dialogView.findViewById(R.id.btnConfirmDelete);
         Button btnCancel = dialogView.findViewById(R.id.btnCancelDelete);
 
@@ -1966,30 +1831,35 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                     ((WebView) view).destroy();
                 }
             }
+
+            tabStateManager.clearAllPreviewsFromDisk();
+            tabStateManager.clearAllWebViewStates();
+            incognitoTabs.clear();
+            parentTabMap.clear();
             
             tabMap.clear();
-            tabPreviews.clear();
-            clearAllPreviewsFromDisk();
-            clearAllWebViewStates();
-            incognitoTabs.clear();
-            tabMap.put(HOME_URL, homeView);
-            tabMap.put(QUICK_ACCESS_MESSAGES_URL, quickAccessMessagesView);
-            
+            tabMap.put(HOME_URL, null);
+            tabMap.put(QUICK_ACCESS_MESSAGES_URL, null);
+
             siteList.clear();
             siteList.add(HOME_URL);
             updateTabCountDisplay();
-            
+
             currentPosition = 0;
             sitesAdapter.setSelectedPosition(0);
             sitesAdapter.notifyDataSetChanged();
-            tabSwitcherAdapter.notifyDataSetChanged();
+            updateTabSwitcherList();
             searchSitesAdapter.updateFilteredList();
-            
+
             saveSites();
             onSiteClick(0);
-            Toast.makeText(this, "All recent sites cleared", Toast.LENGTH_SHORT).show();
-            deleteDialog.dismiss();
             
+            if (homeFragment != null) homeFragment.notifyDataChanged();
+            
+            Toast.makeText(this, "All recent sites cleared", Toast.LENGTH_SHORT).show();
+
+            deleteDialog.dismiss();
+
             beginPanelTransition();
             hideAllPanelsInternal();
         });
@@ -2032,78 +1902,6 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     }
 
     /**
-     * Configures autocomplete suggestions for an AutoCompleteTextView.
-     */
-    private void setupAutocomplete(AutoCompleteTextView textView) {
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, R.layout.item_suggestion, android.R.id.text1, new ArrayList<>());
-        textView.setAdapter(adapter);
-        textView.setDropDownBackgroundResource(R.drawable.bg_popup_rounded);
-
-        textView.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
-                if (sharedPreferences.getBoolean(PREDICTIONS_KEY, true) && s.length() > 0) {
-                    fetchSuggestions(s.toString(), adapter);
-                }
-            }
-
-            @Override
-            public void afterTextChanged(Editable s) {}
-        });
-        
-        textView.setOnItemClickListener((parent, view, position, id) -> {
-            String suggestion = adapter.getItem(position);
-            textView.setText(suggestion);
-            if (textView == urlInput) {
-                handleUrlInput();
-            } else if (textView == searchInput) {
-                btnDoGlobalSearch.performClick();
-            }
-        });
-    }
-
-    /**
-     * Fetches search suggestions from Google API in a background thread.
-     */
-    private void fetchSuggestions(String query, ArrayAdapter<String> adapter) {
-        executorService.execute(() -> {
-            try {
-                String urlString = "https://suggestqueries.google.com/complete/search?client=firefox&q=" + query;
-                URL url = new URL(urlString);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("GET");
-                
-                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                StringBuilder response = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    response.append(line);
-                }
-                reader.close();
-
-                JSONArray jsonResponse = new JSONArray(response.toString());
-                JSONArray suggestionsJson = jsonResponse.getJSONArray(1);
-                List<String> suggestions = new ArrayList<>();
-                for (int i = 0; i < suggestionsJson.length(); i++) {
-                    suggestions.add(suggestionsJson.getString(i));
-                }
-
-                mainHandler.post(() -> {
-                    adapter.clear();
-                    adapter.addAll(suggestions);
-                    adapter.notifyDataSetChanged();
-                });
-
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        });
-    }
-
-    /**
      * Shows the browsing history dialog.
      */
     @SuppressLint("NotifyDataSetChanged")
@@ -2113,11 +1911,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         Button clearAll = dialogView.findViewById(R.id.btnClearAllHistory);
         ImageButton closeBtn = dialogView.findViewById(R.id.btnCloseHistory);
         TextView tvEmpty = dialogView.findViewById(R.id.tvEmptyMessage);
-        
+
         tvEmpty.setText(R.string.history_empty);
         tvEmpty.setVisibility(historyList.isEmpty() ? View.VISIBLE : View.GONE);
         rv.setVisibility(historyList.isEmpty() ? View.GONE : View.VISIBLE);
-        
+
         UIUtils.setClickAnimation(this, clearAll);
         UIUtils.setClickAnimation(this, closeBtn);
 
@@ -2147,9 +1945,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                     historyList.clear();
                     saveHistory();
                     if (historyAdapter != null) historyAdapter.notifyDataSetChanged();
-                    if (recentSitesAdapter != null) recentSitesAdapter.updateFilteredList();
-                    updateRecentVisibility();
+                    if (homeFragment != null) homeFragment.notifyDataChanged();
                     Toast.makeText(this, R.string.history_cleared, Toast.LENGTH_SHORT).show();
+
                     historyDialog.dismiss();
                 })
                 .setNegativeButton(R.string.cancel, null)
@@ -2186,7 +1984,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                     historyList.remove(position);
                     saveHistory();
                     if (historyAdapter != null) historyAdapter.notifyItemRemoved(position);
-                    
+
                     if (historyDialog != null && historyDialog.isShowing()) {
                         TextView tvEmpty = historyDialog.findViewById(R.id.tvEmptyMessage);
                         RecyclerView rv = historyDialog.findViewById(R.id.historyRecyclerView);
@@ -2196,9 +1994,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                         }
                     }
 
-                    if (recentSitesAdapter != null) recentSitesAdapter.updateFilteredList();
-                    updateRecentVisibility();
+                    if (homeFragment != null) homeFragment.notifyDataChanged();
                 })
+
                 .setNegativeButton(R.string.cancel, null)
                 .show();
     }
@@ -2217,38 +2015,79 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                     if (bookmarksList.contains(url)) {
                         bookmarksList.remove(url);
                         saveBookmarks();
-                        bookmarksAdapter.updateFilteredList();
-                        updateBookmarksVisibility();
+                        if (homeFragment != null) homeFragment.notifyDataChanged();
                     } else if (historyList.contains(url)) {
                         // For recent sites, we remove all entries of this domain from history
                         String targetDomain = getDomain(url);
                         historyList.removeIf(u -> getDomain(u).equals(targetDomain));
                         saveHistory();
-                        recentSitesAdapter.updateFilteredList();
-                        updateRecentVisibility();
+                        if (homeFragment != null) homeFragment.notifyDataChanged();
                     }
                 })
+
                 .setNegativeButton(R.string.cancel, null)
                 .show();
+    }
+
+    public PreferenceManager getPreferenceManager() {
+        return preferenceManager;
     }
 
     @Override
     public void onSiteClick(int position) {
         hideKeyboard();
-        if (position >= 0 && position < siteList.size()) {
+        if (siteList != null && position >= 0 && position < siteList.size()) {
             currentPosition = position;
             String selectedUrl = siteList.get(position);
+
+            //  Update tab mode automatically based on selection
+            boolean modeChanged = false;
+            if (incognitoTabs.contains(selectedUrl)) {
+                if (isWorkspaceTabMode) {
+                    isWorkspaceTabMode = false;
+                    modeChanged = true;
+                }
+            } else if (workspaceTabs.contains(selectedUrl)) {
+                if (!isWorkspaceTabMode) {
+                    isWorkspaceTabMode = true;
+                    modeChanged = true;
+                }
+            } else if (!selectedUrl.startsWith("home://")) {
+                if (isWorkspaceTabMode) {
+                    isWorkspaceTabMode = false;
+                    modeChanged = true;
+                }
+            }
+
             sitesAdapter.setSelectedPosition(position);
-            tabSwitcherAdapter.setSelectedPosition(position);
+
+            // Map real position to filtered position for tab switcher
+            int filteredPos = -1;
+            for (int i = 0; i < filteredIndices.size(); i++) {
+                if (filteredIndices.get(i) == position) {
+                    filteredPos = i;
+                    break;
+                }
+            }
             
+            if (tabSwitcherPanel != null && tabSwitcherPanel.getVisibility() == View.VISIBLE) {
+                if (modeChanged) {
+                    updateTabSwitcherList();
+                } else {
+                    tabSwitcherAdapter.setSelectedPosition(filteredPos);
+                }
+            } else {
+                tabSwitcherAdapter.setSelectedPosition(filteredPos);
+            }
+
             // Automatically scroll the site recycler to keep the selected tab in view
             if (sitesRecyclerView != null) {
                 sitesRecyclerView.smoothScrollToPosition(position);
             }
 
-            // Automatically scroll the tab switcher grid to the selected tab
-            if (tabSwitcherRecyclerView != null) {
-                tabSwitcherRecyclerView.smoothScrollToPosition(position);
+            // Automatically scroll the tab switcher grid ONLY if switched from site recycler
+            if (tabSwitcherRecyclerView != null && filteredPos != -1 && tabSwitcherPanel.getVisibility() != View.VISIBLE) {
+                tabSwitcherRecyclerView.smoothScrollToPosition(filteredPos);
             }
 
             showWebView(selectedUrl);
@@ -2264,22 +2103,35 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
             boolean isLocked = sitesAdapter.isLocked(url);
             boolean isBookmarked = bookmarksList.contains(url);
+            boolean isWorkspace = workspaceTabs.contains(url);
 
-            final String[] options = {
-                    isLocked ? getString(R.string.option_unlock) : getString(R.string.option_lock),
-                    isBookmarked ? getString(R.string.bookmark_removed) : getString(R.string.option_bookmark),
-                    getString(R.string.option_copy_link),
-                    getString(R.string.option_edit_link),
-                    getString(R.string.option_delete_tab)
-            };
+            List<String> options = new ArrayList<>();
+            List<Integer> icons = new ArrayList<>();
 
-            final int[] icons = {
-                    isLocked ? R.drawable.unlock : R.drawable.lock,
-                    isBookmarked ? R.drawable.starcolor : R.drawable.starnocolor,
-                    0,
-                    0,
-                    0
-            };
+            options.add(isLocked ? getString(R.string.option_unlock) : getString(R.string.option_lock));
+            icons.add(isLocked ? R.drawable.unlock : R.drawable.lock);
+
+            options.add(isBookmarked ? getString(R.string.bookmark_removed) : getString(R.string.option_bookmark));
+            icons.add(isBookmarked ? R.drawable.starcolor : R.drawable.starnocolor);
+
+            options.add(getString(R.string.option_refresh));
+            icons.add(R.drawable.sync);
+
+            if (isWorkspace) {
+                options.add("Clear Active Workspace");
+                icons.add(R.drawable.trashbin);
+            }
+
+            options.add(getString(R.string.option_copy_link));
+            icons.add(0);
+
+            options.add(getString(R.string.option_edit_link));
+            icons.add(0);
+
+
+            options.add(getString(R.string.option_delete_tab));
+            icons.add(0);
+
 
             ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, R.layout.item_dialog_option, R.id.optionText, options) {
                 @NonNull
@@ -2287,8 +2139,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 public View getView(int pos, @androidx.annotation.Nullable View convertView, @NonNull ViewGroup parent) {
                     View view = super.getView(pos, convertView, parent);
                     ImageView iconView = view.findViewById(R.id.optionIcon);
-                    if (icons[pos] != 0) {
-                        iconView.setImageResource(icons[pos]);
+                    if (icons.get(pos) != 0) {
+                        iconView.setImageResource(icons.get(pos));
                         iconView.setVisibility(View.VISIBLE);
                     } else {
                         iconView.setVisibility(View.GONE);
@@ -2300,23 +2152,162 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                     .setTitle(R.string.site_options)
                     .setAdapter(adapter, (dialog, which) -> {
-                        if (which == 0) {
+                        String selection = options.get(which);
+                        if (selection.equals(getString(R.string.option_unlock)) || selection.equals(getString(R.string.option_lock))) {
                             handleToggleLock(url);
-                        } else if (which == 1) {
+                        } else if (selection.equals(getString(R.string.bookmark_removed)) || selection.equals(getString(R.string.option_bookmark))) {
                             handleToggleBookmark(url);
-                        } else if (which == 2) {
+                        } else if (selection.equals(getString(R.string.option_refresh))) {
+                            handleRefreshTab(url);
+                        } else if (selection.equals("Clear Active Workspace")) {
+                            handleClearWorkspace();
+                        } else if (selection.equals(getString(R.string.option_copy_link))) {
                             handleCopyLink(url);
-                        } else if (which == 3) {
+                        } else if (selection.equals(getString(R.string.option_edit_link))) {
                             handleEditLink(url);
-                        } else if (which == 4) {
-                            onTabClose(position);
+                        } else if (selection.equals(getString(R.string.option_delete_tab))) {
+                            onTabCloseReal(position);
+                            updateTabSwitcherList();
                         }
                     })
                     .show();
         }
     }
 
+    private void handleRefreshTab(String url) {
+        View view = tabMap.get(url);
+        if (view instanceof WebView) {
+            ((WebView) view).reload();
+            Toast.makeText(this, "Refreshing " + getDomain(url), Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "Cannot refresh this page", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void handleOpenQuickAccessMessages() {
+        if (!siteList.contains(QUICK_ACCESS_MESSAGES_URL)) {
+            // Always insert dashboard fragments at the beginning (after Home)
+            int insertPos = 1;
+            siteList.add(insertPos, QUICK_ACCESS_MESSAGES_URL);
+            saveSites();
+            updateTabCountDisplay();
+            sitesAdapter.notifyItemInserted(insertPos);
+            searchSitesAdapter.updateFilteredList();
+        }
+        onSiteClick(siteList.indexOf(QUICK_ACCESS_MESSAGES_URL));
+    }
+
+    private void handleOpenWorkspace() {
+        if (!siteList.contains(WORKSPACE_URL)) {
+            // Always insert dashboard fragments at the beginning (after Home/Messages)
+            int insertPos = 1;
+            if (siteList.contains(QUICK_ACCESS_MESSAGES_URL)) insertPos = 2;
+            
+            siteList.add(insertPos, WORKSPACE_URL);
+            saveSites();
+            updateTabCountDisplay();
+            sitesAdapter.notifyItemInserted(insertPos);
+            searchSitesAdapter.updateFilteredList();
+        }
+        onSiteClick(siteList.indexOf(WORKSPACE_URL));
+    }
+
+    private void applyWorkspace(List<String> workspaceUrls) {
+        if (workspaceUrls == null || workspaceUrls.isEmpty() || siteList == null) return;
+
+        // 1. Remove all current workspace tabs from the site list and cleanup their resources
+        List<String> currentWorkspaceUrls = new ArrayList<>(workspaceTabs);
+        workspaceTabs.clear();
+
+        for (String url : currentWorkspaceUrls) {
+            // Never remove dashboard URLs
+            if (url.startsWith("home://")) continue;
+
+            // Find and remove all instances of this URL from the session
+            while (siteList.contains(url)) {
+                int index = siteList.indexOf(url);
+                siteList.remove(index);
+
+                // Only destroy the WebView if this URL is no longer used in any other tab
+                boolean isShared = false;
+                for (String s : siteList) {
+                    if (s.equals(url)) {
+                        isShared = true;
+                        break;
+                    }
+                }
+
+                if (!isShared) {
+                    View tab = tabMap.remove(url);
+                    if (tab instanceof WebView) {
+                        ViewGroup parent = (ViewGroup) tab.getParent();
+                        if (parent != null) parent.removeView(tab);
+                        ((WebView) tab).destroy();
+                    }
+                    tabPreviews.remove(url);
+                    tabStateManager.deletePreviewFromDisk(url);
+                    tabStateManager.deleteWebViewState(url);
+                }
+            }
+        }
+
+        // 2. Add the new workspace URLs to the session (always at the end)
+        for (String url : workspaceUrls) {
+            if (url.startsWith("home://")) continue; // Never add internal dashboards to workspace list
+            workspaceTabs.add(url);
+            if (!siteList.contains(url)) {
+                siteList.add(url);
+            }
+        }
+
+        saveSites();
+        updateTabCountDisplay();
+        
+        // 3. Update UI and switch to the first tab of the new workspace
+        if (sitesAdapter != null) {
+            sitesAdapter.setWorkspaceTabs(workspaceTabs);
+        }
+        if (tabSwitcherAdapter != null) {
+            tabSwitcherAdapter.setWorkspaceTabs(workspaceTabs);
+        }
+
+        sitesAdapter.notifyDataSetChanged();
+        updateTabSwitcherList();
+
+        int firstTabPos = siteList.indexOf(workspaceUrls.get(0));
+        if (firstTabPos != -1) {
+            onSiteClick(firstTabPos);
+        }
+
+        Toast.makeText(this, "Workspace Applied", Toast.LENGTH_SHORT).show();
+    }
+
+    private void handleClearWorkspace() {
+        if (workspaceTabs.isEmpty()) {
+            Toast.makeText(this, "No active workspace tabs to clear", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        List<String> toRemove = new ArrayList<>(workspaceTabs);
+        workspaceTabs.clear();
+
+        for (String url : toRemove) {
+            // Find and close all tabs matching workspace URLs
+            for (int i = siteList.size() - 1; i >= 0; i--) {
+                if (siteList.get(i).equals(url)) {
+                    onTabClose(i);
+                }
+            }
+        }
+
+        if (sitesAdapter != null) sitesAdapter.setWorkspaceTabs(workspaceTabs);
+        if (tabSwitcherAdapter != null) tabSwitcherAdapter.setWorkspaceTabs(workspaceTabs);
+
+        Toast.makeText(this, "Workspace tabs cleared", Toast.LENGTH_SHORT).show();
+    }
+
     private void handleCopyLink(String url) {
+
         if (url.startsWith("home://")) {
             Toast.makeText(this, "Cannot copy this link", Toast.LENGTH_SHORT).show();
             return;
@@ -2334,15 +2325,15 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             Toast.makeText(this, "Cannot edit this link", Toast.LENGTH_SHORT).show();
             return;
         }
-        
+
         urlInput.setText(url);
         urlInput.setSelection(url.length()); // Put cursor at the end
-        
+
         beginPanelTransition();
         hideAllPanelsInternal();
         controlsPanel.setVisibility(View.VISIBLE);
         urlInput.requestFocus();
-        
+
         // Ensure keyboard is shown
         urlInput.postDelayed(() -> {
             InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
@@ -2385,21 +2376,15 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             Toast.makeText(this, R.string.bookmark_added, Toast.LENGTH_SHORT).show();
         }
         saveBookmarks();
-        bookmarksAdapter.updateFilteredList();
-        updateBookmarksVisibility();
+        if (homeFragment != null) homeFragment.notifyDataChanged();
     }
+
 
     /**
      * Saves the list of currently locked sites to SharedPreferences.
      */
     private void saveLockedSites() {
-        Set<String> locked = new HashSet<>();
-        for (String url : siteList) {
-            if (sitesAdapter.isLocked(url)) {
-                locked.add(url);
-            }
-        }
-        sharedPreferences.edit().putStringSet(LOCKED_SITES_KEY, locked).apply();
+        preferenceManager.saveLockedSites(siteList, sitesAdapter);
     }
 
     private void cancelTimeout(WebView view) {
@@ -2449,7 +2434,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         settings.setLoadsImagesAutomatically(true);
         settings.setBlockNetworkImage(false);
         settings.setBlockNetworkLoads(false);
-        
+
         settings.setGeolocationEnabled(true);
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
@@ -2492,18 +2477,30 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
         wv.setOnLongClickListener(v -> {
             WebView.HitTestResult result = wv.getHitTestResult();
-            if (result.getType() == WebView.HitTestResult.IMAGE_TYPE ||
-                result.getType() == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
-                
-                String imageUrl = result.getExtra();
-                if (imageUrl != null) {
-                    showImageOptionsDialog(imageUrl);
-                    return true;
+            int type = result.getType();
+            String extra = result.getExtra();
+
+            if (extra == null) return false;
+
+            boolean isIncognito = false;
+            for (Map.Entry<String, View> entry : tabMap.entrySet()) {
+                if (entry.getValue() == wv && incognitoTabs.contains(entry.getKey())) {
+                    isIncognito = true;
+                    break;
                 }
+            }
+            final boolean finalIncognito = isIncognito;
+
+            if (type == WebView.HitTestResult.IMAGE_TYPE || type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
+                showImageOptionsDialog(extra, finalIncognito);
+                return true;
+            } else if (type == WebView.HitTestResult.SRC_ANCHOR_TYPE) {
+                showLinkOptionsDialog(extra, finalIncognito);
+                return true;
             }
             return false;
         });
-        
+
         wv.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback callback) {
@@ -2568,11 +2565,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 }
                 customView = view;
                 customViewCallback = callback;
-                
+
                 mainLayout.setVisibility(View.GONE);
                 fullscreenContainer.setVisibility(View.VISIBLE);
                 fullscreenContainer.addView(customView);
-                
+
                 setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
                 getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
             }
@@ -2622,7 +2619,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
     private boolean handleExternalScheme(WebView view, String url) {
         if (url == null) return false;
-        
+
         if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("home://") || url.startsWith("data:")) {
             return false;
         }
@@ -2675,18 +2672,26 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             return;
         }
 
+        String parentUrl = currentUrl;
+
         if (!siteList.contains(url)) {
             int insertPos = currentPosition + 1;
+            
             siteList.add(insertPos, url);
             if (isIncognito) {
                 incognitoTabs.add(url);
                 sitesAdapter.setIncognitoTabs(incognitoTabs);
                 tabSwitcherAdapter.setIncognitoTabs(incognitoTabs);
             }
+            
             saveSites();
             updateTabCountDisplay();
             sitesAdapter.notifyItemInserted(insertPos);
             searchSitesAdapter.updateFilteredList();
+        }
+
+        if (parentUrl != null) {
+            parentTabMap.put(url, parentUrl);
         }
         onSiteClick(siteList.indexOf(url));
     }
@@ -2694,23 +2699,44 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     /**
      * Shows a dialog with options for a long-pressed image.
      */
-    private void showImageOptionsDialog(String imageUrl) {
+    private void showImageOptionsDialog(String imageUrl, boolean isIncognito) {
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.dialog_image_options_title)
                 .setItems(new String[]{
+                        "Open in New Tab",
                         getString(R.string.option_download_image),
                         getString(R.string.option_share_image_url),
                         getString(R.string.option_add_to_post_creator)
                 }, (dialog, which) -> {
                     if (which == 0) {
-                        downloadHandler.downloadFile(imageUrl, null, null, userAgent);
+                        handleNewTabUrl(null, imageUrl, isIncognito);
                     } else if (which == 1) {
+                        downloadHandler.downloadFile(imageUrl, null, null, userAgent);
+                    } else if (which == 2) {
                         Intent shareIntent = new Intent(Intent.ACTION_SEND);
                         shareIntent.setType("text/plain");
                         shareIntent.putExtra(Intent.EXTRA_TEXT, imageUrl);
                         startActivity(Intent.createChooser(shareIntent, "Share Image URL"));
-                    } else if (which == 2) {
+                    } else if (which == 3) {
                         downloadAndShareImage(imageUrl);
+                    }
+                })
+                .show();
+    }
+
+    private void showLinkOptionsDialog(String url, boolean isIncognito) {
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Link Options")
+                .setItems(new String[]{"Open in New Tab", "Copy Link", "Share Link"}, (dialog, which) -> {
+                    if (which == 0) {
+                        handleNewTabUrl(null, url, isIncognito);
+                    } else if (which == 1) {
+                        handleCopyLink(url);
+                    } else if (which == 2) {
+                        Intent shareIntent = new Intent(Intent.ACTION_SEND);
+                        shareIntent.setType("text/plain");
+                        shareIntent.putExtra(Intent.EXTRA_TEXT, url);
+                        startActivity(Intent.createChooser(shareIntent, "Share Link"));
                     }
                 })
                 .show();
@@ -2728,11 +2754,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                             // Create a temporary file in the cache directory
                             String fileName = "shared_image_" + System.currentTimeMillis() + ".jpg";
                             File cacheFile = new File(getCacheDir(), fileName);
-                            
+
                             // Copy Glide's cached file to our accessible cache file
                             copyFile(resource, cacheFile);
 
-                            Uri contentUri = FileProvider.getUriForFile(MainActivity.this, 
+                            Uri contentUri = FileProvider.getUriForFile(MainActivity.this,
                                     getPackageName() + ".provider", cacheFile);
 
                             Intent intent = new Intent(MainActivity.this, PostComposerActivity.class);
@@ -2740,10 +2766,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                             intent.setType("image/*");
                             intent.putExtra(Intent.EXTRA_STREAM, contentUri);
                             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                            
+
                             // Also pass the original URL as text if the composer wants it
                             //intent.putExtra(Intent.EXTRA_TEXT, imageUrl);
-                            
+
                             postComposerLauncher.launch(intent);
                         } catch (IOException e) {
                             Log.e("MainActivity", "Failed to prepare image", e);
@@ -2786,7 +2812,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         wv.setLayoutParams(new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
-        
+
         wv.setWebViewClient(new WebViewClient() {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
@@ -2819,7 +2845,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                     // Clear media list when starting a new page
                     detectedMediaUrls.clear();
                 }
-                
+
                 // Add a timeout logic to handle stuck tabs
                 Runnable timeoutRunnable = () -> {
                     if (view.getProgress() < 100 && tabMap.containsValue(view)) {
@@ -2834,11 +2860,36 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 mainHandler.postDelayed(timeoutRunnable, 60000);
             }
 
+
+
+
             @Override
             public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
                 handler.proceed();
+                String message = "SSL Certificate error.";
+                switch (error.getPrimaryError()) {
+                    case SslError.SSL_UNTRUSTED:
+                        message = "The certificate authority is not trusted.";
+                        break;
+                    case SslError.SSL_EXPIRED:
+                        message = "The certificate has expired.";
+                        break;
+                    case SslError.SSL_IDMISMATCH:
+                        message = "The certificate hostname does not match the website.";
+                        break;
+                    case SslError.SSL_NOTYETVALID:
+                        message = "The certificate is not yet valid.";
+                        break;
+                }
+                new com.google.android.material.dialog.MaterialAlertDialogBuilder(MainActivity.this)
+                        .setTitle("Security Warning")
+                        .setMessage(message + " This could mean someone is trying to intercept your data. Do you want to proceed anyway?")
+                        .setPositiveButton("Proceed", (dialog, which) -> handler.proceed())
+                        .setNegativeButton("Cancel", (dialog, which) -> handler.cancel())
+                        .setCancelable(false)
+                        .show();
             }
-            
+
             @Override
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
                 super.onReceivedError(view, errorCode, description, failingUrl);
@@ -2860,12 +2911,12 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                     swipeRefreshLayout.setRefreshing(false);
                     updateSwipeRefreshState(view);
                 }
-                
+
                 // We now scan for media dynamically when the user clicks the Grab Media button
-                
+
                 String oldUrl = null;
                 int tabIndex = -1;
-                
+
                 // Try to match the current tab first to avoid desync
                 if (currentPosition >= 0 && currentPosition < siteList.size()) {
                     String u = siteList.get(currentPosition);
@@ -2874,7 +2925,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                         tabIndex = currentPosition;
                     }
                 }
-                
+
                 if (tabIndex == -1) {
                     for (int i = 0; i < siteList.size(); i++) {
                         String u = siteList.get(i);
@@ -2891,10 +2942,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 if (!url.startsWith("home://") && !isIncognito && !url.startsWith("data:text/html")) {
                     addToHistory(url);
                 }
-                
+
                 if (oldUrl != null && !oldUrl.equals(url) && tabIndex != -1) {
                     siteList.set(tabIndex, url);
-                    
+
                     // Check if old URL is still used by other tabs before removing from map
                     boolean isOldUrlShared = false;
                     for (int i = 0; i < siteList.size(); i++) {
@@ -2904,34 +2955,43 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                         }
                     }
 
-                    if (!isOldUrlShared && !oldUrl.equals(HOME_URL) && !oldUrl.startsWith(INCOGNITO_HOME_URL)) {
+                    if (!isOldUrlShared && !oldUrl.equals(HOME_URL) && !oldUrl.equals(QUICK_ACCESS_MESSAGES_URL) && !oldUrl.startsWith(INCOGNITO_HOME_URL) && !oldUrl.equals(WORKSPACE_URL)) {
                         tabMap.remove(oldUrl);
                         Bitmap preview = tabPreviews.remove(oldUrl);
                         if (preview != null) {
                             tabPreviews.put(url, preview);
                         }
                     }
-                    
+
                     tabMap.put(url, view);
-                    
+
                     if (tabIndex == currentPosition) {
                         currentUrl = url;
                     }
-                    
+
                     if (incognitoTabs.contains(oldUrl)) {
                         incognitoTabs.remove(oldUrl);
                         incognitoTabs.add(url);
                         sitesAdapter.setIncognitoTabs(incognitoTabs);
-                        tabSwitcherAdapter.setIncognitoTabs(incognitoTabs);
+                    }
+
+                    if (workspaceTabs.contains(oldUrl)) {
+                        workspaceTabs.remove(oldUrl);
+                        if (!url.startsWith("home://")) {
+                            workspaceTabs.add(url);
+                        }
+                        if (sitesAdapter != null) {
+                            sitesAdapter.setWorkspaceTabs(workspaceTabs);
+                        }
                     }
 
                     if (searchSitesAdapter.getSelectedSites().contains(oldUrl)) {
                         searchSitesAdapter.getSelectedSites().remove(oldUrl);
                         searchSitesAdapter.getSelectedSites().add(url);
                     }
-                    
+
                     sitesAdapter.notifyItemChanged(tabIndex);
-                    tabSwitcherAdapter.notifyItemChanged(tabIndex);
+                    updateTabSwitcherList();
                     searchSitesAdapter.updateFilteredList();
                     saveSites();
                 }
@@ -2940,14 +3000,14 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
         wv.addJavascriptInterface(new WebAppInterface(this), "SocialOneNative");
         setupWebView(wv);
-        
+
         if (incognitoTabs.contains(url)) {
             wv.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
             wv.getSettings().setSaveFormData(false);
             wv.getSettings().setSavePassword(false);
         }
 
-        if (!restoreWebViewState(url, wv)) {
+        if (!tabStateManager.restoreWebViewState(url, wv, incognitoTabs)) {
             wv.loadUrl(url);
         }
 
@@ -2962,7 +3022,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
      */
     private static class WebAppInterface {
         private final WeakReference<MainActivity> activityRef;
-        
+
         WebAppInterface(MainActivity activity) {
             this.activityRef = new WeakReference<>(activity);
         }
@@ -2995,7 +3055,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         public void onMediaFound(String url) {
             MainActivity activity = activityRef.get();
             if (activity == null || url == null || url.isEmpty()) return;
-            
+
             activity.mainHandler.post(() -> {
                 if (!activity.detectedMediaUrls.contains(url)) {
                     activity.detectedMediaUrls.add(url);
@@ -3012,7 +3072,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         if (failingUrl != null && !failingUrl.startsWith("data:text/html")) {
             failingUrls.put(view, failingUrl);
         }
-        
+
         String html = "<html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>" +
                 "<style>body { font-family: sans-serif; background-color: #FFFFFF; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; text-align: center; color: #000000; }" +
                 ".container { max-width: 400px; }" +
@@ -3029,41 +3089,34 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
 
 
-    private void showMediaGrabberDialog() {
-        mediaHandler.showMediaGrabberDialog(detectedMediaUrls);
-    }
-
     /**
-     * Switches the UI to show the WebView (or Dashboard) associated with a URL.
+     * Switches the UI to show the WebView (or Dashboard Fragment) associated with a URL.
      * @param url The URL of the tab to display.
      */
     private void showWebView(String url) {
         hideKeyboard();
         if (url == null) return;
 
+        boolean isHome = url.equals(HOME_URL);
+        boolean isQuickAccess = url.equals(QUICK_ACCESS_MESSAGES_URL);
+        boolean isIncognitoHome = url.startsWith(INCOGNITO_HOME_URL);
+        boolean isWorkspace = url.equals(WORKSPACE_URL);
+        boolean isDashboard = isHome || isQuickAccess || isIncognitoHome || isWorkspace;
+        
+        boolean wasDashboard = currentUrl != null && currentUrl.startsWith("home://");
+
         View newTab = tabMap.get(url);
-        if (newTab == null) {
-            if (url.startsWith(INCOGNITO_HOME_URL)) {
-                newTab = findViewById(R.id.incognitoHomeView);
-                tabMap.put(url, newTab);
-            } else if (url.equals(HOME_URL)) {
-                newTab = findViewById(R.id.homeView);
-                tabMap.put(url, newTab);
-            } else if (url.equals(QUICK_ACCESS_MESSAGES_URL)) {
-                newTab = findViewById(R.id.quickAccessMessagesView);
-                tabMap.put(url, newTab);
-            } else if (!url.startsWith("home://")) {
-                createWebView(url);
-                newTab = tabMap.get(url);
-            }
+        if (newTab == null && !isDashboard) {
+            createWebView(url);
+            newTab = tabMap.get(url);
         }
 
         if (currentUrl != null && currentUrl.equals(url)) {
-            final View targetView = newTab;
+            // Pulse animation for identical view switch
+            View targetView = isDashboard ? fragmentContainer : newTab;
             if (targetView != null) {
                 targetView.setVisibility(View.VISIBLE);
                 targetView.bringToFront();
-                // Pulse animation to show switch between identical views
                 targetView.animate()
                         .alpha(0.6f)
                         .scaleX(0.98f)
@@ -3081,75 +3134,152 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         }
 
         if (currentUrl != null) {
-            final View oldTab = tabMap.get(currentUrl);
+            final View oldTab = wasDashboard ? fragmentContainer : tabMap.get(currentUrl);
             if (oldTab != null) {
-                capturePreview(currentUrl);
-                
+                tabStateManager.capturePreview(currentUrl, oldTab, tabPreviews);
+
                 if (oldTab instanceof WebView && !sitesAdapter.isLocked(currentUrl)) {
                     ((WebView) oldTab).onPause();
                 }
-                
-                oldTab.animate()
-                        .alpha(0f)
-                        .scaleX(0.95f)
-                        .scaleY(0.95f)
-                        .setDuration(ANIM_DURATION)
-                        .withEndAction(() -> {
-                            oldTab.setVisibility(View.GONE);
-                            oldTab.setScaleX(1.0f);
-                            oldTab.setScaleY(1.0f);
-                        })
-                        .start();
+
+                // Only animate hiding the container if we are actually switching containers
+                if (!(wasDashboard && isDashboard)) {
+                    oldTab.animate()
+                            .alpha(0f)
+                            .scaleX(0.95f)
+                            .scaleY(0.95f)
+                            .setDuration(ANIM_DURATION)
+                            .withEndAction(() -> {
+                                oldTab.setVisibility(View.GONE);
+                                oldTab.setScaleX(1.0f);
+                                oldTab.setScaleY(1.0f);
+                            })
+                            .start();
+                }
             }
         }
 
-        if (newTab != null) {
-            if (newTab instanceof WebView) {
-                WebView wv = (WebView) newTab;
-                wv.onResume();
-                updateSwipeRefreshState(wv);
-                
-                // Update Desktop Site switch state
-                Boolean isDesktop = desktopModeMap.get(wv);
-                switchDesktopSite.setChecked(isDesktop != null && isDesktop);
-                switchDesktopSite.setEnabled(true);
+        // Manage Dashboard Fragments
+        androidx.fragment.app.FragmentTransaction ft = getSupportFragmentManager().beginTransaction();
+        if (homeFragment != null) ft.hide(homeFragment);
+        if (quickAccessFragment != null) ft.hide(quickAccessFragment);
+        if (incognitoFragment != null) ft.hide(incognitoFragment);
+        if (workspaceFragment != null) ft.hide(workspaceFragment);
+        
+        if (isDashboard) {
+            fragmentContainer.setVisibility(View.VISIBLE);
+            fragmentContainer.bringToFront();
+            
+            if (!wasDashboard) {
+                // Animate showing the container if we are coming from a WebView
+                fragmentContainer.setAlpha(0f);
+                fragmentContainer.setScaleX(1.05f);
+                fragmentContainer.setScaleY(1.05f);
+
+                fragmentContainer.animate()
+                        .alpha(1f)
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .setDuration(ANIM_DURATION)
+                        .start();
             } else {
+                // Switching between different dashboard sub-pages
+                // Add a subtle cross-fade transition effect
+                fragmentContainer.animate()
+                        .alpha(0.6f)
+                        .scaleX(0.98f)
+                        .scaleY(0.98f)
+                        .setDuration(ANIM_DURATION / 2)
+                        .withEndAction(() -> {
+                            // Actually swap the fragments here while partially hidden
+                            androidx.fragment.app.FragmentTransaction ftInner = getSupportFragmentManager().beginTransaction();
+                            ftInner.hide(homeFragment).hide(quickAccessFragment).hide(incognitoFragment).hide(workspaceFragment);
+                            
+                            if (isHome) ftInner.show(homeFragment);
+                            else if (isQuickAccess) ftInner.show(quickAccessFragment);
+                            else if (isIncognitoHome) ftInner.show(incognitoFragment);
+                            else if (isWorkspace) {
+                                if (workspaceFragment != null) workspaceFragment.setCurrentOpenTabs(siteList);
+                                ftInner.show(workspaceFragment);
+                            }
+                            ftInner.commit();
+
+                            fragmentContainer.animate()
+                                    .alpha(1f)
+                                    .scaleX(1f)
+                                    .scaleY(1f)
+                                    .setDuration(ANIM_DURATION / 2)
+                                    .start();
+                        })
+                        .start();
+                
+                // Return early as the animation endAction handles the fragment transaction and reset
+                currentUrl = url;
+                swipeRefreshLayout.setVisibility(View.GONE);
                 swipeRefreshLayout.setEnabled(false);
                 switchDesktopSite.setChecked(false);
                 switchDesktopSite.setEnabled(false);
+                progressBar.setVisibility(View.GONE);
+                return;
+            }
+
+            if (isHome) ft.show(homeFragment);
+            else if (isQuickAccess) ft.show(quickAccessFragment);
+            else if (isIncognitoHome) ft.show(incognitoFragment);
+            else if (isWorkspace) {
+                if (workspaceFragment != null) {
+                    workspaceFragment.setCurrentOpenTabs(siteList);
+                }
+                ft.show(workspaceFragment);
             }
             
-            findViewById(R.id.homeView).setVisibility(url.equals(HOME_URL) ? View.VISIBLE : View.GONE);
-            findViewById(R.id.quickAccessMessagesView).setVisibility(url.equals(QUICK_ACCESS_MESSAGES_URL) ? View.VISIBLE : View.GONE);
-            findViewById(R.id.incognitoHomeView).setVisibility(url.startsWith(INCOGNITO_HOME_URL) ? View.VISIBLE : View.GONE);
-            swipeRefreshLayout.setVisibility(!url.startsWith("home://") ? View.VISIBLE : View.GONE);
+            ft.commit();
 
-            newTab.setAlpha(0f);
-            newTab.setScaleX(1.05f);
-            newTab.setScaleY(1.05f);
-            newTab.setVisibility(View.VISIBLE);
-            newTab.bringToFront();
-            
-            newTab.animate()
-                    .alpha(1f)
-                    .scaleX(1f)
-                    .scaleY(1f)
-                    .setDuration(ANIM_DURATION)
-                    .start();
-
-            newTab.requestFocus();
-            currentUrl = url;
-            
-            // Re-apply insets to handle "Fixed Boundary" for Home tab in Normal Mode
-            View mainView = findViewById(R.id.main);
-            if (mainView != null) ViewCompat.requestApplyInsets(mainView);
-        }
-        
-        if (!(newTab instanceof WebView)) {
+            swipeRefreshLayout.setEnabled(false);
+            switchDesktopSite.setChecked(false);
+            switchDesktopSite.setEnabled(false);
             progressBar.setVisibility(View.GONE);
             swipeRefreshLayout.setRefreshing(false);
+        } else {
+            ft.commit();
+            fragmentContainer.setVisibility(View.GONE);
+            
+            if (newTab != null) {
+                if (newTab instanceof WebView) {
+                    WebView wv = (WebView) newTab;
+                    wv.onResume();
+                    updateSwipeRefreshState(wv);
+
+                    Boolean isDesktop = desktopModeMap.get(wv);
+                    switchDesktopSite.setChecked(isDesktop != null && isDesktop);
+                    switchDesktopSite.setEnabled(true);
+                }
+
+                newTab.setAlpha(0f);
+                newTab.setScaleX(1.05f);
+                newTab.setScaleY(1.05f);
+                newTab.setVisibility(View.VISIBLE);
+                newTab.bringToFront();
+
+                newTab.animate()
+                        .alpha(1f)
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .setDuration(ANIM_DURATION)
+                        .start();
+                
+                newTab.requestFocus();
+            }
         }
+
+        currentUrl = url;
+        swipeRefreshLayout.setVisibility(!url.startsWith("home://") ? View.VISIBLE : View.GONE);
+
+        // Re-apply insets to handle "Fixed Boundary" for Home tab in Normal Mode
+        View mainView = findViewById(R.id.main);
+        if (mainView != null) ViewCompat.requestApplyInsets(mainView);
     }
+
 
     /**
      * Performs a global search across selected platform URLs.
@@ -3157,9 +3287,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private void performGlobalSearch(String query, Set<String> urls) {
         for (String url : urls) {
             String searchUrl = SearchEngineManager.getFormattedSearchUrl(url, query);
-            
+
             View tabView = tabMap.get(url);
-            
+
             // If the URL is not found in tabMap, it might be because the tab has navigated
             // or the mapping is stale. We check if any WebView in tabMap is the one we want.
             if (!(tabView instanceof WebView)) {
@@ -3176,12 +3306,12 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 createWebView(url);
                 tabView = tabMap.get(url);
             }
-            
+
             if (tabView instanceof WebView) {
                 ((WebView) tabView).loadUrl(searchUrl);
             }
         }
-        
+
 
         Toast.makeText(this, "Global search success", Toast.LENGTH_SHORT).show();
     }
@@ -3195,19 +3325,19 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         String url = wv.getUrl();
         if (url != null) {
             // Disable pull-to-refresh on sites with vertical-swipe navigation to avoid conflicts
-            boolean isShortFormVideo = 
-                    url.contains("youtube.com") ||
-                    url.contains("instagram.com") ||
-                    url.contains("tiktok.com") ||
-                    url.contains("facebook.com/reels") ||
-                    url.contains("facebook.com/watch") ||
-                    url.contains("snapchat.com") ||
-                    url.contains("pinterest.com") ||
-                    url.contains("reddit.com") ||
-                    url.contains("threads.net") ||
-                    url.contains("x.com/i/videos") ||
-                    url.contains("twitter.com/i/videos") ||
-                    (url.contains("bing.com") && !url.contains("search?q="));
+            boolean isShortFormVideo =
+                            url.contains("youtube.com/shorts") ||
+                            url.contains("instagram.com/reels") ||
+                            url.contains("tiktok.com") ||
+                            url.contains("facebook.com/reels") ||
+                            url.contains("facebook.com/watch") ||
+                            url.contains("snapchat.com") ||
+                            url.contains("pinterest.com") ||
+                            url.contains("reddit.com") ||
+                            url.contains("threads.net") ||
+                            url.contains("x.com/i/videos") ||
+                            url.contains("twitter.com/i/videos") ||
+                            (url.contains("bing.com") && !url.contains("search?q="));
 
             if (isShortFormVideo) {
                 swipeRefreshLayout.setEnabled(false);
@@ -3218,6 +3348,37 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         // We only enable the pull-to-refresh if the WebView reports it is at the very top.
         // This allows refresh on all sites while minimizing accidental triggers.
         swipeRefreshLayout.setEnabled(!wv.canScrollVertically(-1));
+    }
+
+    private void updateWorkspacesWithCloudData(List<Map<String, Object>> cloudWorkspaces) {
+        if (cloudWorkspaces == null || cloudWorkspaces.isEmpty()) return;
+
+        String localJson = preferenceManager.loadWorkspacesJson();
+        try {
+            JSONArray localArray = new JSONArray(localJson);
+            Set<String> localNames = new HashSet<>();
+            for (int i = 0; i < localArray.length(); i++) {
+                localNames.add(localArray.getJSONObject(i).optString("name", ""));
+            }
+
+            boolean changed = false;
+            for (Map<String, Object> remote : cloudWorkspaces) {
+                String name = (String) remote.get("name");
+                if (name != null && !localNames.contains(name)) {
+                    JSONObject newW = new JSONObject();
+                    newW.put("name", name);
+                    newW.put("tabs", new JSONArray((List<String>) remote.get("tabs")));
+                    localArray.put(newW);
+                    changed = true;
+                }
+            }
+
+            if (changed) {
+                preferenceManager.saveWorkspacesJson(localArray.toString());
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private void updateUIWithCloudData(List<String> tabs, List<String> bookmarks, List<String> history, boolean clearExisting) {
@@ -3238,9 +3399,9 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 changed = true;
             }
             if (changed || clearExisting) {
-                saveSitesLocally();
+                preferenceManager.saveSites(siteList, incognitoTabs, workspaceTabs, HOME_URL, QUICK_ACCESS_MESSAGES_URL, INCOGNITO_HOME_URL);
                 sitesAdapter.notifyDataSetChanged();
-                tabSwitcherAdapter.notifyDataSetChanged();
+                updateTabSwitcherList();
                 if (searchSitesAdapter != null) searchSitesAdapter.updateFilteredList();
                 updateTabCountDisplay();
             }
@@ -3257,9 +3418,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 }
             }
             if (bChanged || clearExisting) {
-                saveBookmarksLocally();
-                bookmarksAdapter.updateFilteredList();
-                updateBookmarksVisibility();
+                preferenceManager.saveBookmarks(bookmarksList);
+                if (homeFragment != null) homeFragment.notifyDataChanged();
             }
         }
 
@@ -3274,11 +3434,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 }
             }
             if (hChanged || clearExisting) {
-                saveHistoryLocally();
-                recentSitesAdapter.updateFilteredList();
-                updateRecentVisibility();
+                preferenceManager.saveHistory(historyList);
+                if (homeFragment != null) homeFragment.notifyDataChanged();
             }
         }
+
     }
 
     /**
@@ -3296,7 +3456,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
             // Sync guest data to newly logged in account if necessary
             if (firestoreManager != null) {
-                firestoreManager.performInitialMigration(siteList, bookmarksList, historyList);
+                firestoreManager.performInitialMigration(siteList, bookmarksList, historyList, preferenceManager.loadWorkspacesList());
 
                 // Also trigger a load to merge any existing cloud data
                 firestoreManager.loadUserData(new FirestoreManager.OnDataLoadedListener() {
@@ -3304,6 +3464,12 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                     public void onDataLoaded(List<String> tabs, List<String> bookmarks, List<String> history) {
                         updateUIWithCloudData(tabs, bookmarks, history, false);
                     }
+
+                    @Override
+                    public void onWorkspacesLoaded(List<Map<String, Object>> workspaces) {
+                        updateWorkspacesWithCloudData(workspaces);
+                    }
+
                     @Override public void onError(Exception e) { Log.e("MainActivity", "Sync error", e); }
                 });
             }
@@ -3318,7 +3484,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private void clearLocalData() {
         // Clear SharedPreferences
         sharedPreferences.edit().clear().apply();
-        
+
         // Destroy and clear all WebViews
         for (Map.Entry<String, View> entry : tabMap.entrySet()) {
             if (entry.getValue() instanceof WebView) {
@@ -3330,12 +3496,13 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         }
         tabMap.clear();
         tabPreviews.clear();
-        clearAllPreviewsFromDisk();
+        tabStateManager.clearAllPreviewsFromDisk();
+        tabStateManager.clearAllWebViewStates();
         siteList.clear();
         historyList.clear();
         bookmarksList.clear();
         incognitoTabs.clear();
-        
+
         // Clear global WebView cookies and data
         CookieManager.getInstance().removeAllCookies(null);
         CookieManager.getInstance().flush();
@@ -3359,7 +3526,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         // Prioritize toolbar height to prevent squishing
         int bHeight = (bottomBar != null && bottomBar.getHeight() > 0) ? bottomBar.getHeight() : UIUtils.dpToPx(this, 80);
         int cHeight = (controls != null && controls.getVisibility() == View.VISIBLE) ? controls.getHeight() : 0;
-        
+
         // Get stable system insets to ignore the keyboard height and tab-specific padding in calculations
         int navBarHeight = 0;
         int statusBarHeight = 0;
@@ -3371,17 +3538,20 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             statusBarHeight = mainView.getPaddingTop();
             navBarHeight = bottomUiContainer.getPaddingBottom();
         }
-        
+
         // Account for handle height only if it's visible (Advanced Mode)
-        int hHeight = (handleTouchArea != null && handleTouchArea.getVisibility() == View.VISIBLE) 
+        int hHeight = (handleTouchArea != null && handleTouchArea.getVisibility() == View.VISIBLE)
                 ? (handleTouchArea.getHeight() > 0 ? handleTouchArea.getHeight() : UIUtils.dpToPx(this, 40))
                 : 0;
 
+        View spacer = findViewById(R.id.hideModeSpacer);
+        int sHeight = (spacer != null && spacer.getVisibility() == View.VISIBLE) ? spacer.getHeight() : 0;
+
         // Consistent Usable Height across all tabs (Total - Status - Nav)
         int usableHeight = totalHeight - statusBarHeight - navBarHeight;
-        
+
         // Panel space = UsableHeight - Toolbar - Active Controls - Handle - Buffer
-        int targetHeight = usableHeight - bHeight - cHeight - hHeight - UIUtils.dpToPx(this, 40);
+        int targetHeight = usableHeight - bHeight - cHeight -sHeight - UIUtils.dpToPx(this, 40);
 
         if (targetHeight < UIUtils.dpToPx(this, 70)) targetHeight = UIUtils.dpToPx(this, 70);
 
@@ -3405,11 +3575,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         }
 
         View controls = findViewById(R.id.controlsPanel);
-        
+
         // Prioritize toolbar and system bar space to prevent squishing on small screens
         int bHeight = (bottomBar != null && bottomBar.getHeight() > 0) ? bottomBar.getHeight() : UIUtils.dpToPx(this, 80);
         int cHeight = (controls != null && controls.getVisibility() == View.VISIBLE) ? controls.getHeight() : 0;
-        
+
         // Get stable system insets to ignore the keyboard height and tab-specific padding in calculations
         int navBarHeight = 0;
         int statusBarHeight = 0;
@@ -3421,14 +3591,14 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             statusBarHeight = mainView.getPaddingTop();
             navBarHeight = bottomUiContainer.getPaddingBottom();
         }
-        
-        int hHeight = (handleTouchArea != null && handleTouchArea.getVisibility() == View.VISIBLE) 
+
+        int hHeight = (handleTouchArea != null && handleTouchArea.getVisibility() == View.VISIBLE)
                 ? (handleTouchArea.getHeight() > 0 ? handleTouchArea.getHeight() : UIUtils.dpToPx(this, 40))
                 : 0;
 
         // Consistent Usable Height across all tabs (Total - Status - Nav)
         int usableHeight = totalHeight - statusBarHeight - navBarHeight;
-        
+
         // Panel space = UsableHeight - Toolbar - Active Controls - Handle - Buffer
         int targetHeight = usableHeight - bHeight - cHeight - hHeight - UIUtils.dpToPx(this, 40);
 
@@ -3454,151 +3624,34 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         }
     }
 
-    /**
-     * Loads the list of saved sites from SharedPreferences.
-     */
-    private void loadSites() {
-        Set<String> set = sharedPreferences.getStringSet(SITES_KEY, null);
-        if (set == null || set.isEmpty()) {
-            siteList = new ArrayList<>();
-        } else {
-            siteList = new ArrayList<>();
-            for (String url : set) {
-                // Migrate old business URL to new quick access messages URL
-                if ("home://business".equals(url)) {
-                    siteList.add(QUICK_ACCESS_MESSAGES_URL);
-                } else {
-                    siteList.add(url);
-                }
-            }
-        }
-    }
 
     /**
      * Saves the current list of sites (excluding dashboard and incognito URLs) to SharedPreferences and Cloud.
      */
     private void saveSites() {
-        saveSitesLocally();
-        if (firestoreManager != null) {
-            List<String> filteredList = new ArrayList<>();
-            for (String url : siteList) {
-                if (!url.equals(HOME_URL) && 
-                    !url.equals(QUICK_ACCESS_MESSAGES_URL) && 
-                    !url.startsWith(INCOGNITO_HOME_URL) && 
-                    !incognitoTabs.contains(url)) {
-                    filteredList.add(url);
-                }
-            }
-            firestoreManager.saveTabs(filteredList);
-        }
+        preferenceManager.saveSites(siteList, incognitoTabs, workspaceTabs, HOME_URL, QUICK_ACCESS_MESSAGES_URL, INCOGNITO_HOME_URL);
     }
 
-    private void saveSitesLocally() {
-        SharedPreferences.Editor editor = sharedPreferences.edit();
-        Set<String> set = new HashSet<>();
-        for (String url : siteList) {
-            // Skip dashboard URLs and any URL currently marked as incognito
-            if (url.equals(HOME_URL) || 
-                url.equals(QUICK_ACCESS_MESSAGES_URL) || 
-                url.startsWith(INCOGNITO_HOME_URL) || 
-                incognitoTabs.contains(url)) {
-                continue;
-            }
-            set.add(url);
-        }
-        editor.putStringSet(SITES_KEY, set);
-        editor.apply();
-    }
-
-    /**
-     * Loads browsing history from SharedPreferences.
-     */
-    private void loadHistory() {
-        Set<String> set = sharedPreferences.getStringSet(HISTORY_KEY, new HashSet<>());
-        historyList = new ArrayList<>(set);
-    }
 
     /**
      * Saves browsing history to SharedPreferences and Cloud.
      */
     private void saveHistory() {
-        saveHistoryLocally();
-        if (firestoreManager != null) {
-            firestoreManager.saveHistory(historyList);
-        }
+        preferenceManager.saveHistory(historyList);
     }
 
-    private void saveHistoryLocally() {
-        Set<String> historySet = new HashSet<>(historyList);
-        sharedPreferences.edit().putStringSet(HISTORY_KEY, historySet).apply();
-    }
-
-    /**
-     * Loads bookmarks from SharedPreferences.
-     */
-    private void loadBookmarks() {
-        Set<String> set = sharedPreferences.getStringSet(BOOKMARKS_KEY, new HashSet<>());
-        bookmarksList = new ArrayList<>(set);
-    }
 
     /**
      * Saves bookmarks to SharedPreferences and Cloud.
      */
     private void saveBookmarks() {
-        saveBookmarksLocally();
-        if (firestoreManager != null) {
-            firestoreManager.saveBookmarks(bookmarksList);
-        }
-    }
-
-    private void saveBookmarksLocally() {
-        Set<String> bookmarkSet = new HashSet<>(bookmarksList);
-        sharedPreferences.edit().putStringSet(BOOKMARKS_KEY, bookmarkSet).apply();
+        preferenceManager.saveBookmarks(bookmarksList);
     }
 
     private void saveSitePermission(String origin, String permission, boolean granted) {
         SharedPreferences perms = getSharedPreferences("SitePermissions", MODE_PRIVATE);
         String key = origin + "|" + permission;
         perms.edit().putBoolean(key, granted).apply();
-    }
-
-    public void showSitePermissionsManager() {
-        SharedPreferences perms = getSharedPreferences("SitePermissions", MODE_PRIVATE);
-        Map<String, ?> allEntries = perms.getAll();
-        
-        if (allEntries.isEmpty()) {
-            Toast.makeText(this, "No site permissions saved", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        List<String> list = new ArrayList<>();
-        List<String> keysList = new ArrayList<>(allEntries.keySet());
-        for (String key : keysList) {
-            String status = (Boolean) allEntries.get(key) ? "Allowed" : "Blocked";
-            list.add(key.replace("|", " - ") + ": " + status);
-        }
-
-        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-                .setTitle("Site Permissions")
-                .setItems(list.toArray(new String[0]), (dialog, which) -> {
-                    String key = keysList.get(which);
-                    
-                    new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-                            .setTitle("Revoke Permission?")
-                            .setMessage("Do you want to clear this permission for " + key.split("\\|")[0] + "?")
-                            .setPositiveButton("Revoke", (d, w) -> {
-                                perms.edit().remove(key).apply();
-                                Toast.makeText(this, "Permission revoked. Reload page to apply.", Toast.LENGTH_SHORT).show();
-                            })
-                            .setNegativeButton("Cancel", null)
-                            .show();
-                })
-                .setPositiveButton("Close", null)
-                .setNeutralButton("Clear All", (d, w) -> {
-                    perms.edit().clear().apply();
-                    Toast.makeText(this, "All permissions cleared", Toast.LENGTH_SHORT).show();
-                })
-                .show();
     }
 
     /**
@@ -3612,11 +3665,12 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             historyList.remove(historyList.size() - 1);
         }
         saveHistory();
-        if (recentSitesAdapter != null) {
-            recentSitesAdapter.updateFilteredList();
-            updateRecentVisibility();
+        if (homeFragment != null) {
+            homeFragment.notifyDataChanged();
         }
     }
+
+
 
     private void showAppInfoDialog() {
         View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_app_info, null);
@@ -3650,21 +3704,21 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
         title.setText(R.string.find_on_page);
         message.setVisibility(View.GONE);
-        
+
         LinearLayout container = dialogView.findViewById(R.id.dialogContainer);
         EditText input = new EditText(this);
         input.setHint(R.string.find_hint);
         input.setSingleLine(true);
         input.setTextColor(getResources().getColor(R.color.primary_text));
         input.setHintTextColor(getResources().getColor(R.color.secondary_text));
-        
+
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.setMargins(UIUtils.dpToPx(this, 20), 0, UIUtils.dpToPx(this, 20), UIUtils.dpToPx(this, 20));
         input.setLayoutParams(lp);
         container.addView(input, 1);
 
         btnFind.setText("Find");
-        
+
         // Setup Clear button with high-visibility matching design
         com.google.android.material.button.MaterialButton btnClear = new com.google.android.material.button.MaterialButton(this);
         btnClear.setText("Clear");
@@ -3675,18 +3729,18 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         btnClear.setMinWidth(0);
         btnClear.setMinimumWidth(0);
         btnClear.setHeight(UIUtils.dpToPx(this, 36));
-        
+
         // Use explicit colors from the theme for maximum contrast in both modes
         int contrastBg = getResources().getColor(R.color.button_background);
         int contrastText = getResources().getColor(R.color.button_text);
         btnClear.setBackgroundTintList(android.content.res.ColorStateList.valueOf(contrastBg));
         btnClear.setTextColor(contrastText);
         btnClear.setRippleColor(android.content.res.ColorStateList.valueOf(contrastText).withAlpha(40));
-        
+
         // Use a wrapper to position it at the top right of the title area
         RelativeLayout titleWrapper = new RelativeLayout(this);
         titleWrapper.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        
+
         // Move title into the wrapper
         container.removeView(title);
         RelativeLayout.LayoutParams titleLp = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -3694,14 +3748,14 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         titleLp.addRule(RelativeLayout.CENTER_VERTICAL);
         title.setLayoutParams(titleLp);
         titleWrapper.addView(title);
-        
+
         // Add clear button to the wrapper
         RelativeLayout.LayoutParams clearLp = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, UIUtils.dpToPx(this, 36));
         clearLp.addRule(RelativeLayout.ALIGN_PARENT_END);
         clearLp.addRule(RelativeLayout.CENTER_VERTICAL);
         btnClear.setLayoutParams(clearLp);
         titleWrapper.addView(btnClear);
-        
+
         // Add the wrapper back to the container at the top
         container.addView(titleWrapper, 0);
 
@@ -3726,14 +3780,14 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 View currentView = tabMap.get(currentUrl);
                 if (currentView instanceof WebView) {
                     ((WebView) currentView).findAllAsync(query);
-                    
+
                     // Force hide keyboard from the dialog's input first to prevent layout jitter
                     input.clearFocus();
                     InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                     if (imm != null) imm.hideSoftInputFromWindow(input.getWindowToken(), 0);
-                    
+
                     dialog.dismiss();
-                    
+
                     // Close the options panel with transition after a brief pause to ensure smooth UI update
                     mainHandler.postDelayed(this::hideAllPanels, 50);
                 }
@@ -3752,7 +3806,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         btnCancel.setOnClickListener(v -> dialog.dismiss());
         dialog.show();
 
-   }
+    }
 
     /**
      * Checks if any of the overlay panels are currently visible.
@@ -3792,10 +3846,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
         if (newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && !isTablet()) {
             boolean panelsToHide = (tabSwitcherPanel != null && tabSwitcherPanel.getVisibility() == View.VISIBLE) ||
-                                  (moreOptionsPanel != null && moreOptionsPanel.getVisibility() == View.VISIBLE) ||
-                                  (searchPanel != null && searchPanel.getVisibility() == View.VISIBLE);
-            
-           if (panelsToHide) {
+                    (moreOptionsPanel != null && moreOptionsPanel.getVisibility() == View.VISIBLE) ||
+                    (searchPanel != null && searchPanel.getVisibility() == View.VISIBLE);
+
+            if (panelsToHide) {
                 beginPanelTransition();
                 if (tabSwitcherPanel != null) tabSwitcherPanel.setVisibility(View.GONE);
                 if (moreOptionsPanel != null) moreOptionsPanel.setVisibility(View.GONE);
@@ -3846,6 +3900,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
     @Override
     protected void onDestroy() {
+        if (tabStateManager != null) tabStateManager.shutdown();
         for (String url : incognitoTabs) {
             View v = tabMap.get(url);
             if (v instanceof WebView) {
@@ -3863,8 +3918,6 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         tabMap.clear();
         tabPreviews.clear();
         incognitoTabs.clear();
-        executorService.shutdown();
         super.onDestroy();
     }
-
 }

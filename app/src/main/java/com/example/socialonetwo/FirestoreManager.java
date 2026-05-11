@@ -25,12 +25,14 @@ public class FirestoreManager {
     private static final String KEY_BOOKMARKS = "bookmarks";
     private static final String KEY_HISTORY = "history";
     private static final String KEY_POST_DRAFTS = "post_drafts";
+    private static final String KEY_WORKSPACES = "workspaces";
 
     // Balancing user satisfaction (power use) vs data efficiency (document size)
     private static final int MAX_TABS = 30;
     private static final int MAX_BOOKMARKS = 100;
     private static final int MAX_HISTORY = 50;
     private static final int MAX_DRAFTS = 15;
+    private static final int MAX_WORKSPACES = 10;
 
     private final FirebaseFirestore db;
     private final FirebaseAuth auth;
@@ -42,6 +44,7 @@ public class FirestoreManager {
     public interface OnDataLoadedListener {
         void onDataLoaded(List<String> tabs, List<String> bookmarks, List<String> history);
         default void onPostDraftsLoaded(List<String> drafts) {}
+        default void onWorkspacesLoaded(List<Map<String, Object>> workspaces) {}
         void onError(Exception e);
     }
 
@@ -169,6 +172,27 @@ public class FirestoreManager {
     }
 
     /**
+     * Saves the list of workspaces to Firestore.
+     */
+    public void saveWorkspaces(List<Map<String, Object>> workspaces) {
+        FirebaseUser user = auth.getCurrentUser();
+        if (user == null || workspaces == null) return;
+
+        List<Map<String, Object>> limitedWorkspaces = workspaces;
+        if (workspaces.size() > MAX_WORKSPACES) {
+            limitedWorkspaces = workspaces.subList(0, MAX_WORKSPACES);
+        }
+
+        Map<String, Object> data = new HashMap<>();
+        data.put(KEY_WORKSPACES, limitedWorkspaces);
+
+        db.collection(COLLECTION_USERS).document(user.getUid())
+                .set(data, SetOptions.merge())
+                .addOnSuccessListener(aVoid -> Log.d(TAG, "Workspaces successfully synced to cloud"))
+                .addOnFailureListener(e -> Log.e(TAG, "Error syncing workspaces", e));
+    }
+
+    /**
      * Loads user data from Firestore and triggers the callback with results.
      */
     @SuppressWarnings("unchecked")
@@ -187,10 +211,14 @@ public class FirestoreManager {
                         List<String> bookmarks = (List<String>) documentSnapshot.get(KEY_BOOKMARKS);
                         List<String> history = (List<String>) documentSnapshot.get(KEY_HISTORY);
                         List<String> postDrafts = (List<String>) documentSnapshot.get(KEY_POST_DRAFTS);
+                        List<Map<String, Object>> workspaces = (List<Map<String, Object>>) documentSnapshot.get(KEY_WORKSPACES);
 
                         listener.onDataLoaded(tabs, bookmarks, history);
                         if (postDrafts != null) {
                             listener.onPostDraftsLoaded(postDrafts);
+                        }
+                        if (workspaces != null) {
+                            listener.onWorkspacesLoaded(workspaces);
                         }
                     } else {
                         listener.onDataLoaded(null, null, null);
@@ -202,7 +230,7 @@ public class FirestoreManager {
     /**
      * Migrates initial local data to Firestore if the cloud is empty.
      */
-    public void performInitialMigration(List<String> localTabs, List<String> localBookmarks, List<String> localHistory) {
+    public void performInitialMigration(List<String> localTabs, List<String> localBookmarks, List<String> localHistory, List<Map<String, Object>> localWorkspaces) {
         loadUserData(new OnDataLoadedListener() {
             @Override
             public void onDataLoaded(List<String> remoteTabs, List<String> remoteBookmarks, List<String> remoteHistory) {
@@ -215,6 +243,13 @@ public class FirestoreManager {
                 }
                 if (remoteHistory == null || remoteHistory.isEmpty()) {
                     saveHistory(localHistory);
+                }
+            }
+
+            @Override
+            public void onWorkspacesLoaded(List<Map<String, Object>> remoteWorkspaces) {
+                if (remoteWorkspaces == null || remoteWorkspaces.isEmpty()) {
+                    saveWorkspaces(localWorkspaces);
                 }
             }
 

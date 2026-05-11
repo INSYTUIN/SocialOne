@@ -46,29 +46,25 @@ public class DownloadHandler {
     }
 
     public void downloadFile(String url, String mimetype, String contentDisposition, String userAgent) {
-        String finalMimeType = mimetype;
-        // Fix for APK files often being served with generic MIME types
-        if (url != null && url.toLowerCase().contains(".apk")) {
-            if (finalMimeType == null || finalMimeType.equalsIgnoreCase("application/octet-stream") || finalMimeType.equalsIgnoreCase("binary/octet-stream")) {
-                finalMimeType = "application/vnd.android.package-archive";
-            }
-        }
+        final String mimeToUse = determineMimeType(url, mimetype);
 
         DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
-        if (finalMimeType != null) {
-            request.setMimeType(finalMimeType);
+        if (!mimeToUse.isEmpty()) {
+            request.setMimeType(mimeToUse);
         }
         
-        String fileName = URLUtil.guessFileName(url, contentDisposition, finalMimeType);
+        String fileName = URLUtil.guessFileName(url, contentDisposition, mimeToUse);
         
         // Ensure APK extension if we detected it's an APK
         if (url != null && url.toLowerCase().contains(".apk") && !fileName.toLowerCase().endsWith(".apk")) {
-            // Remove .bin if guessFileName added it erroneously
-            if (fileName.toLowerCase().endsWith(".bin")) {
-                fileName = fileName.substring(0, fileName.length() - 4) + ".apk";
-            } else {
-                fileName = fileName + ".apk";
-            }
+            fileName = fileName.replace(".bin", "") + ".apk";
+        }
+
+        // Fix for images from Google/common hosts that guess as .bin
+        if (fileName.toLowerCase().endsWith(".bin") && (mimeToUse.startsWith("image/") || (url != null && url.contains("gstatic.com/images")))) {
+            String ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeToUse);
+            if (ext == null || ext.isEmpty()) ext = "jpg";
+            fileName = fileName.substring(0, fileName.length() - 4) + "." + ext;
         }
 
         String cookies = CookieManager.getInstance().getCookie(url);
@@ -86,6 +82,34 @@ public class DownloadHandler {
             Toast.makeText(context, "Downloading File", Toast.LENGTH_LONG).show();
             showDownloadsDialog();
         }
+    }
+
+    private String determineMimeType(String url, String providedMimetype) {
+        String mime = (providedMimetype != null) ? providedMimetype : "";
+        
+        // If mimetype is missing or generic, try to guess from extension or pattern in the URL
+        if (mime.isEmpty() || mime.equalsIgnoreCase("application/octet-stream") || mime.equalsIgnoreCase("binary/octet-stream")) {
+            // Check for common image patterns first
+            if (url != null && (url.contains("gstatic.com/images") || url.contains("googleusercontent.com/") || url.contains("images?q="))) {
+                return "image/jpeg";
+            }
+
+            String extension = MimeTypeMap.getFileExtensionFromUrl(url);
+            if (extension != null && !extension.isEmpty()) {
+                String guessedMime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase());
+                if (guessedMime != null) {
+                    mime = guessedMime;
+                }
+            }
+        }
+
+        // Special fix for APK files
+        if (url != null && url.toLowerCase().contains(".apk")) {
+            if (mime.isEmpty() || mime.equalsIgnoreCase("application/octet-stream") || mime.equalsIgnoreCase("binary/octet-stream")) {
+                mime = "application/vnd.android.package-archive";
+            }
+        }
+        return mime;
     }
 
     public void showDownloadsDialog() {
@@ -124,7 +148,6 @@ public class DownloadHandler {
         updateDownloadListFromManager(adapter, tvEmpty, rv);
 
         if (downloadsDialog.getWindow() != null) {
-            // Set width to 95% before showing to avoid wonky jumping animation
             android.view.WindowManager.LayoutParams lp = new android.view.WindowManager.LayoutParams();
             lp.copyFrom(downloadsDialog.getWindow().getAttributes());
             lp.width = (int) (context.getResources().getDisplayMetrics().widthPixels * 0.95);
@@ -132,7 +155,7 @@ public class DownloadHandler {
             downloadsDialog.getWindow().setAttributes(lp);
         }
 
-        // Hide keyboard when opening downloads to prevent layout glitches
+        // Hide keyboard when opening downloads
         if (context instanceof android.app.Activity) {
             android.app.Activity activity = (android.app.Activity) context;
             android.view.View focus = activity.getCurrentFocus();
@@ -144,16 +167,14 @@ public class DownloadHandler {
         }
         
         downloadsDialog.show();
-
-        // Delay polling slightly to allow opening animation to finish smoothly
         downloadUpdateHandler.postDelayed(() -> startDownloadPolling(adapter, tvEmpty, rv), 300);
     }
 
     private String formatFileSize(long size) {
         if (size <= 0) return "0 KB";
-        if (size < 1000 * 1024) { // Less than 1000 KB
+        if (size < 1000 * 1024) {
             return (size / 1024) + " KB";
-        } else if (size < 1000 * 1024 * 1024) { // Less than 1000 MB
+        } else if (size < 1000 * 1024 * 1024) {
             return String.format(java.util.Locale.US, "%.1f MB", size / (1024.0 * 1024.0));
         } else {
             return String.format(java.util.Locale.US, "%.2f GB", size / (1024.0 * 1024.0 * 1024.0));
@@ -221,14 +242,14 @@ public class DownloadHandler {
 
                     do {
                         DownloadItem item = new DownloadItem();
-                        item.id = cursor.getLong(idIdx);
-                        item.title = cursor.getString(titleIdx);
-                        item.status = cursor.getInt(statusIdx);
-                        item.totalSize = cursor.getLong(totalIdx);
-                        item.bytesSoFar = cursor.getLong(bytesIdx);
-                        item.localUri = cursor.getString(uriIdx);
-                        item.mimeType = cursor.getString(mimeIdx);
-                        item.lastModified = cursor.getLong(dateIdx);
+                        if (idIdx != -1) item.id = cursor.getLong(idIdx);
+                        if (titleIdx != -1) item.title = cursor.getString(titleIdx);
+                        if (statusIdx != -1) item.status = cursor.getInt(statusIdx);
+                        if (totalIdx != -1) item.totalSize = cursor.getLong(totalIdx);
+                        if (bytesIdx != -1) item.bytesSoFar = cursor.getLong(bytesIdx);
+                        if (uriIdx != -1) item.localUri = cursor.getString(uriIdx);
+                        if (mimeIdx != -1) item.mimeType = cursor.getString(mimeIdx);
+                        if (dateIdx != -1) item.lastModified = cursor.getLong(dateIdx);
                         items.add(item);
                     } while (cursor.moveToNext());
                 }
@@ -308,25 +329,40 @@ public class DownloadHandler {
             holder.itemView.setOnClickListener(v -> {
                 if (item.status != DownloadManager.STATUS_SUCCESSFUL || item.localUri == null) return;
                 try {
-                    File file = new File(Uri.parse(item.localUri).getPath());
+                    Uri localUri = Uri.parse(item.localUri);
+                    String path = localUri.getPath();
+                    if (path == null) {
+                        Toast.makeText(context, "Cannot find file path", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    
+                    File file = new File(path);
+                    if (!file.exists()) {
+                        Toast.makeText(context, "File not found", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
                     Uri contentUri = FileProvider.getUriForFile(context, context.getPackageName() + ".provider", file);
                     Intent intent = new Intent(Intent.ACTION_VIEW);
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
-                    String extension = MimeTypeMap.getFileExtensionFromUrl(contentUri.toString());
-                    String finalMime;
-                    if (extension != null && extension.equalsIgnoreCase("apk")) {
-                        finalMime = "application/vnd.android.package-archive";
-                    } else if (extension != null) {
-                        finalMime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase());
-                    } else {
-                        finalMime = "*/*";
+                    String finalMime = item.mimeType;
+                    if (finalMime == null || finalMime.isEmpty() || finalMime.equalsIgnoreCase("application/octet-stream")) {
+                        String name = file.getName();
+                        int lastDot = name.lastIndexOf('.');
+                        if (lastDot != -1) {
+                            String extension = name.substring(lastDot + 1);
+                            finalMime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase());
+                        }
                     }
-                    if (finalMime == null) finalMime = "*/*";
+                    
+                    if (finalMime == null || finalMime.isEmpty()) finalMime = "*/*";
 
                     intent.setDataAndType(contentUri, finalMime);
-                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     context.startActivity(intent);
                 } catch (Exception e) {
+                    e.printStackTrace();
                     Toast.makeText(context, "Cannot open file", Toast.LENGTH_SHORT).show();
                 }
             });

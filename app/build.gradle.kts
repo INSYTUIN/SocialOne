@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.google.gms.google.services)
+    alias(libs.plugins.google.firebase.crashlytics)
 }
 
 android {
@@ -12,14 +13,15 @@ android {
         minSdk = 24
         targetSdk = 35
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.2.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -33,6 +35,8 @@ android {
 }
 
 dependencies {
+    implementation(libs.androidx.fragment)
+    implementation(libs.androidx.recyclerview)
     implementation(libs.appcompat)
 
     // Import the BoM for the Firebase platform
@@ -41,7 +45,9 @@ dependencies {
     // Declare the dependencies for the desired Firebase products without specifying versions
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
+    implementation(libs.firebase.crashlytics)
     implementation(libs.play.services.auth)
+    implementation("com.google.firebase:firebase-analytics")
 
     implementation(libs.material)
     implementation(libs.activity)

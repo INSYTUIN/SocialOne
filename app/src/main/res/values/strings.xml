@@ -50,6 +50,7 @@
     <string name="bookmark_added">Bookmark added</string>
     <string name="bookmark_removed">Remove bookmark</string>
     <string name="option_bookmark">Bookmark Site</string>
+    <string name="option_refresh">Refresh Tab</string>
     <string name="option_lock">Lock Tab</string>
     <string name="option_unlock">Unlock Tab</string>
     <string name="option_delete_tab">Delete Tab</string>
@@ -83,6 +84,8 @@
     <string name="logout_title">Logout</string>
     <string name="logout_message">Are you sure you want to logout? All local browsing data will be cleared.</string>
     <string name="logout_confirm">Logout</string>
+    <string name="login_success">Login successful</string>
+    <string name="logout_success">Logout successful</string>
 
     <!-- Incognito Mode -->
     <string name="incognito_mode">Incognito Mode</string>
@@ -91,6 +94,8 @@
     <string name="incognito_not_saved_title">Social One won\'t save:</string>
     <string name="incognito_not_saved_list">• Your browsing history\n• Cookies and site data\n• Information entered in forms</string>
     <string name="incognito_footer">Use the websearch to start browsing privately.</string>
+
+    <!-- Strings for More options, Settings and Post Composer -->
     <string name="settings_title">Settings</string>
     <string name="search_preferences_title">Search Preferences</string>
     <string name="search_engine_desc">Choose the service used for web searches.</string>
@@ -153,6 +158,13 @@
     <string name="guide_quick_access_desc">Tap the button on the home screen to quickly open your favorite messaging platforms in one place.</string>
     <string name="guide_forward_title">Forward Navigation</string>
     <string name="guide_forward_desc">Easily move forward in your browsing history using the forward arrow button in the bottom bar.</string>
+    <string name="guide_siteoptions_title">Site Options</string>
+    <string name="guide_siteoptions_desc">Long press the tabs to open Site Options. Allows you to refresh, lock, bookmark, copy/edit links and Delete tabs.</string>
+    <string name="guide_workspace_title">Workspace</string>
+    <string name="guide_workspace_desc">Save your tab groups for quick access of your businesses, social platforms, personal media, etc.</string>
+
+
+    <!-- strings for the quick access messages -->
     <string name="got_it">Got It!</string>
     <string name="telegram">Telegram</string>
     <string name="discord">Discord</string>

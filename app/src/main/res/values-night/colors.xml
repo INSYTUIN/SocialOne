@@ -13,4 +13,7 @@
 
     <color name="selected_tab_stroke">#FFFFFFFF</color>
     <color name="selected_tab_glow">#4DFFFFFF</color>
+
+    <color name="tab_switch_background">#333333</color>
+    <color name="tab_switch_stroke">#444444</color>
 </resources>

@@ -75,6 +75,10 @@ public class RecentSitesAdapter extends RecyclerView.Adapter<RecentSitesAdapter.
      */
     public void updateFilteredList() {
         filteredRecentSites.clear();
+        if (historyList == null) {
+            notifyDataSetChanged();
+            return;
+        }
         Set<String> seen = new HashSet<>();
         
         for (String url : historyList) {

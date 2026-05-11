@@ -97,6 +97,7 @@ public class AuthActivity extends AppCompatActivity {
         mAuth.signInWithCredential(credential)
                 .addOnCompleteListener(this, task -> {
                     if (task.isSuccessful()) {
+                        Toast.makeText(AuthActivity.this, R.string.login_success, Toast.LENGTH_SHORT).show();
                         goToMainActivity();
                     } else {
                         setLoading(false);

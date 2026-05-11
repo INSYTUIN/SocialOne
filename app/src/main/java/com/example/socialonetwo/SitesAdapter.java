@@ -28,6 +28,7 @@ public class SitesAdapter extends RecyclerView.Adapter<SitesAdapter.SiteViewHold
     private int selectedPosition = 0;
     private final Set<String> lockedSites = new HashSet<>();
     private Set<String> incognitoTabs = new HashSet<>();
+    private Set<String> workspaceTabs = new HashSet<>();
     private static final int MAX_LOCKED = 3;
 
     /**
@@ -83,6 +84,11 @@ public class SitesAdapter extends RecyclerView.Adapter<SitesAdapter.SiteViewHold
         // Do not call notifyDataSetChanged here to allow item animations
     }
 
+    public void setWorkspaceTabs(Set<String> workspaceTabs) {
+        this.workspaceTabs = workspaceTabs;
+        notifyDataSetChanged();
+    }
+
     /**
      * Toggles the lock status of a specific site.
      * @param url The URL of the site to toggle.
@@ -131,6 +137,10 @@ public class SitesAdapter extends RecyclerView.Adapter<SitesAdapter.SiteViewHold
             displayName = "Home";
         } else if (url.equals("home://quickaccess_messages")) {
             displayName = "Messages";
+        } else if (url.equals("home://workspace")) {
+            displayName = "Workspace";
+        } else if (url.startsWith("home://incognito")) {
+            displayName = "Incognito";
         } else if (url.startsWith("Global Search: ")) {
             displayName = url; 
         } else {
@@ -157,6 +167,9 @@ public class SitesAdapter extends RecyclerView.Adapter<SitesAdapter.SiteViewHold
         
         // Show incognito icon if site is incognito
         holder.incognitoIndicator.setVisibility(incognitoTabs.contains(url) ? View.VISIBLE : View.GONE);
+        
+        // Show workspace icon if site belongs to workspace
+        holder.workspaceIndicator.setVisibility(workspaceTabs.contains(url) ? View.VISIBLE : View.GONE);
 
         holder.itemView.setOnClickListener(v -> {
             int currentPos = holder.getAdapterPosition();
@@ -187,6 +200,7 @@ public class SitesAdapter extends RecyclerView.Adapter<SitesAdapter.SiteViewHold
         MaterialCardView card;
         ImageView lockIndicator;
         ImageView incognitoIndicator;
+        ImageView workspaceIndicator;
 
         public SiteViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -194,6 +208,7 @@ public class SitesAdapter extends RecyclerView.Adapter<SitesAdapter.SiteViewHold
             card = itemView.findViewById(R.id.siteCard);
             lockIndicator = itemView.findViewById(R.id.lockIndicator);
             incognitoIndicator = itemView.findViewById(R.id.incognitoIndicator);
+            workspaceIndicator = itemView.findViewById(R.id.workspaceIndicator);
         }
     }
 }

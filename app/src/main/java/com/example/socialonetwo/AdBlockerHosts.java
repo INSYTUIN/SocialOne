@@ -35,8 +35,7 @@ public class AdBlockerHosts {
      * Supports basic AdBlock syntax: ||domain^, @@ (exceptions), and path patterns.
      */
     public static void loadFromAssets(Context context) {
-        Toast.makeText(context, "Ad blocker is initializing...", Toast.LENGTH_SHORT).show();
-        
+
         try (InputStream is = context.getAssets().open("ad_hosts.txt");
              BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
 
@@ -49,7 +48,7 @@ public class AdBlockerHosts {
             String line;
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
-                
+
                 // Skip comments and empty lines
                 if (line.isEmpty() || line.startsWith("!") || line.startsWith("#")) continue;
 
@@ -97,8 +96,7 @@ public class AdBlockerHosts {
                 }
                 count++;
             }
-            
-            Toast.makeText(context, "Ad blocker is ready.", Toast.LENGTH_SHORT).show();
+
             Log.d(TAG, "Loaded " + count + " filters (Domains: " + BLOCKED_DOMAINS.size() + ", URL Patterns: " + URL_FILTERS.size() + ")");
         } catch (IOException e) {
             Log.e(TAG, "Error loading ad filters", e);
@@ -110,7 +108,7 @@ public class AdBlockerHosts {
      */
     public static boolean shouldBlock(Uri uri) {
         if (uri == null) return false;
-        
+
         String urlString = uri.toString().toLowerCase();
         String host = uri.getHost();
         

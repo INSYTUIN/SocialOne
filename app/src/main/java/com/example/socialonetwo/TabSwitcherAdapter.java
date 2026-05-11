@@ -7,6 +7,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.RelativeLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -15,6 +16,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.card.MaterialCardView;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -27,10 +29,11 @@ import java.util.Set;
  */
 public class TabSwitcherAdapter extends RecyclerView.Adapter<TabSwitcherAdapter.ViewHolder> {
 
-    private final List<String> siteList;
+    private List<String> filteredList;
     private final Map<String, Bitmap> tabPreviews;
     private final OnTabClickListener listener;
     private Set<String> incognitoTabs = new HashSet<>();
+    private Set<String> workspaceTabs = new HashSet<>();
     private int selectedPosition = -1;
 
     /**
@@ -58,19 +61,29 @@ public class TabSwitcherAdapter extends RecyclerView.Adapter<TabSwitcherAdapter.
 
     /**
      * Constructor for TabSwitcherAdapter.
-     * @param siteList The list of open site URLs.
+     * @param siteList The list of open site URLs (master list).
      * @param tabPreviews A map containing cached bitmap previews for each URL.
      * @param listener The listener for tab click and close events.
      */
     public TabSwitcherAdapter(List<String> siteList, Map<String, Bitmap> tabPreviews, OnTabClickListener listener) {
-        this.siteList = siteList;
+        this.filteredList = siteList;
         this.tabPreviews = tabPreviews;
         this.listener = listener;
+    }
+
+    public void setFilteredList(List<String> list) {
+        // Create a new list to avoid identity issues and shared reference mutations
+        this.filteredList = new ArrayList<>(list);
+        notifyDataSetChanged();
     }
 
     public void setIncognitoTabs(Set<String> incognitoTabs) {
         this.incognitoTabs = incognitoTabs;
         // Do not notifyDataSetChanged here to allow item animations in RecyclerView
+    }
+
+    public void setWorkspaceTabs(Set<String> workspaceTabs) {
+        this.workspaceTabs = workspaceTabs;
     }
 
     public void setSelectedPosition(int position) {
@@ -93,7 +106,7 @@ public class TabSwitcherAdapter extends RecyclerView.Adapter<TabSwitcherAdapter.
 
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
-        String url = siteList.get(position);
+        String url = filteredList.get(position);
         
         // Determine the display name for the tab
         String displayName;
@@ -101,6 +114,8 @@ public class TabSwitcherAdapter extends RecyclerView.Adapter<TabSwitcherAdapter.
             displayName = "Home";
         } else if (url.equals("home://quickaccess_messages")) {
             displayName = "Messages";
+        } else if (url.equals("home://workspace")) {
+            displayName = "Workspace";
         } else if (url.startsWith("home://incognito")) {
             displayName = "Incognito";
         } else {
@@ -112,10 +127,24 @@ public class TabSwitcherAdapter extends RecyclerView.Adapter<TabSwitcherAdapter.
         holder.tvTitle.setText(displayName);
         
         // Only show close button if there is more than one tab open
-        holder.btnClose.setVisibility(siteList.size() > 1 ? View.VISIBLE : View.GONE);
+        holder.btnClose.setVisibility(filteredList.size() > 1 ? View.VISIBLE : View.GONE);
         
         // Show incognito icon if tab is incognito
         holder.incognitoIcon.setVisibility(incognitoTabs.contains(url) ? View.VISIBLE : View.GONE);
+        
+        // Show workspace icon if tab belongs to workspace
+        holder.workspaceIcon.setVisibility(workspaceTabs.contains(url) ? View.VISIBLE : View.GONE);
+        
+        // Adjust title position if icons are visible
+        RelativeLayout.LayoutParams titleParams = (RelativeLayout.LayoutParams) holder.tvTitle.getLayoutParams();
+        if (holder.incognitoIcon.getVisibility() == View.VISIBLE) {
+            titleParams.addRule(RelativeLayout.END_OF, R.id.incognitoIcon);
+        } else if (holder.workspaceIcon.getVisibility() == View.VISIBLE) {
+            titleParams.addRule(RelativeLayout.END_OF, R.id.workspaceIcon);
+        } else {
+            titleParams.removeRule(RelativeLayout.END_OF);
+        }
+        holder.tvTitle.setLayoutParams(titleParams);
         
         // Highlight current tab with border and dynamic glow based on theme
         if (position == selectedPosition) {
@@ -141,22 +170,36 @@ public class TabSwitcherAdapter extends RecyclerView.Adapter<TabSwitcherAdapter.
                 holder.ivPreview.setImageResource(R.drawable.incognito);
                 holder.ivPreview.setBackgroundColor(Color.parseColor("#202124"));
             } else {
-                holder.ivPreview.setImageResource(R.drawable.socialone);
+                holder.ivPreview.setImageResource(R.drawable.tabswitcher_image_preview);
                 holder.ivPreview.setBackgroundColor(Color.parseColor("#F5F5F5"));
             }
         }
 
-        holder.itemView.setOnClickListener(v -> listener.onTabClick(holder.getAdapterPosition()));
-        holder.btnClose.setOnClickListener(v -> listener.onTabClose(holder.getAdapterPosition()));
+        holder.itemView.setOnClickListener(v -> {
+            int pos = holder.getAdapterPosition();
+            if (pos != RecyclerView.NO_POSITION) {
+                listener.onTabClick(pos);
+            }
+        });
+        holder.btnClose.setOnClickListener(v -> {
+            int pos = holder.getAdapterPosition();
+            if (pos != RecyclerView.NO_POSITION) {
+                listener.onTabClose(pos);
+            }
+        });
         holder.itemView.setOnLongClickListener(v -> {
-            listener.onTabLongClick(holder.getAdapterPosition());
-            return true;
+            int pos = holder.getAdapterPosition();
+            if (pos != RecyclerView.NO_POSITION) {
+                listener.onTabLongClick(pos);
+                return true;
+            }
+            return false;
         });
     }
 
     @Override
     public int getItemCount() {
-        return siteList.size();
+        return filteredList.size();
     }
 
     /**
@@ -168,6 +211,7 @@ public class TabSwitcherAdapter extends RecyclerView.Adapter<TabSwitcherAdapter.
         TextView tvTitle;
         ImageButton btnClose;
         ImageView incognitoIcon;
+        ImageView workspaceIcon;
         View selectedGlow;
 
         public ViewHolder(@NonNull View itemView) {
@@ -177,6 +221,7 @@ public class TabSwitcherAdapter extends RecyclerView.Adapter<TabSwitcherAdapter.
             tvTitle = itemView.findViewById(R.id.tvTabTitle);
             btnClose = itemView.findViewById(R.id.btnCloseTab);
             incognitoIcon = itemView.findViewById(R.id.incognitoIcon);
+            workspaceIcon = itemView.findViewById(R.id.workspaceIcon);
             selectedGlow = itemView.findViewById(R.id.selectedGlow);
         }
     }
