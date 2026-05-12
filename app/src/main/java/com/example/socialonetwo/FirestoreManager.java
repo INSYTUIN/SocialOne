@@ -123,12 +123,22 @@ public class FirestoreManager {
      * Limits history to the last 50 items and uses debouncing to reduce write frequency.
      */
     public void saveHistory(List<String> history) {
+        saveHistory(history, false);
+    }
+
+    /**
+     * Saves the current list of history to Firestore for the authenticated user.
+     * Limits history to the last 50 items and uses debouncing to reduce write frequency.
+     * @param history The history list to save.
+     * @param force If true, bypasses the debounce timer (used for explicit deletions).
+     */
+    public void saveHistory(List<String> history, boolean force) {
         FirebaseUser user = auth.getCurrentUser();
         if (user == null || history == null) return;
 
         long currentTime = System.currentTimeMillis();
-        // Only sync if significant changes occurred or enough time has passed (2 mins)
-        if (currentTime - lastHistorySyncTime < SYNC_THRESHOLD && history.size() < MAX_HISTORY) {
+        // Only sync if significant changes occurred, enough time has passed (2 mins), or force is requested
+        if (!force && !history.isEmpty() && currentTime - lastHistorySyncTime < SYNC_THRESHOLD && history.size() < MAX_HISTORY) {
             return;
         }
         lastHistorySyncTime = currentTime;

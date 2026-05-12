@@ -70,180 +70,193 @@
         </com.google.android.material.appbar.MaterialToolbar>
     </com.google.android.material.appbar.AppBarLayout>
 
-    <androidx.core.widget.NestedScrollView
+    <!-- Main Content Area with Bottom Action Bar -->
+    <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
+        <!-- Bottom Action Bar containing the Post button -->
         <LinearLayout
+            android:id="@+id/bottomActionContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:padding="16dp"
+            android:background="@color/home_background"
             android:orientation="vertical"
-            android:padding="@dimen/composer_padding">
+            android:elevation="4dp">
 
-            <com.google.android.material.card.MaterialCardView
+            <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+                android:id="@+id/fabPost"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="0dp"
-                app:strokeWidth="1dp"
-                app:strokeColor="#E0E0E0"
-                app:cardBackgroundColor="@android:color/transparent">
+                android:text="Share to Social Apps"
+                app:icon="@drawable/send"
+                android:backgroundTint="@color/button_background"
+                android:textColor="@color/button_text"
+                app:iconTint="@color/button_text"
+                app:cornerRadius="16dp" />
+        </LinearLayout>
 
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="12dp">
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:hint="What's on your mind?"
-                        app:boxStrokeWidth="0dp"
-                        app:boxStrokeWidthFocused="0dp"
-                        app:hintTextColor="@color/secondary_text"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/etPostContent"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:gravity="top"
-                            android:background="@android:color/transparent"
-                            android:inputType="textMultiLine"
-                            android:minLines="6"
-                            android:textSize="@dimen/composer_text_size"
-                            android:textColor="@color/primary_text" />
-                    </com.google.android.material.textfield.TextInputLayout>
-
-                    <TextView
-                        android:id="@+id/tvCharCount"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="end"
-                        android:text="0 characters"
-                        android:textSize="12sp"
-                        android:textColor="@color/secondary_text" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+        <!-- Scrollable Content positioned ABOVE the bottom bar -->
+        <androidx.core.widget.NestedScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_above="@id/bottomActionContainer"
+            android:layout_alignParentTop="true"
+            android:fillViewport="true">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="right|center_vertical"
-                android:layout_marginTop="20dp"
-                >
+                android:orientation="vertical"
+                android:padding="@dimen/composer_padding">
 
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="#E0E0E0"
+                    app:cardBackgroundColor="@android:color/transparent">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnSaveDraft"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="12dp">
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="What's on your mind?"
+                            app:boxStrokeWidth="0dp"
+                            app:boxStrokeWidthFocused="0dp"
+                            app:hintTextColor="@color/secondary_text"
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/etPostContent"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="top"
+                                android:background="@android:color/transparent"
+                                android:inputType="textMultiLine"
+                                android:minLines="6"
+                                android:textSize="@dimen/composer_text_size"
+                                android:textColor="@color/primary_text" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <TextView
+                            android:id="@+id/tvCharCount"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="end"
+                            android:text="0 characters"
+                            android:textSize="12sp"
+                            android:textColor="@color/secondary_text" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="end|center_vertical"
+                    android:layout_marginTop="20dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSaveDraft"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:text="Save Draft"
+                        android:textColor="@color/button_background"
+                        app:strokeColor="@color/button_background"
+                        app:iconTint="@color/button_background"
+                        app:cornerRadius="8dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnAddMedia"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Add Photos/Videos"
+                        android:backgroundTint="@color/button_background"
+                        android:textColor="@color/button_text"
+                        app:icon="@drawable/camera"
+                        app:iconTint="@color/button_text"
+                        app:cornerRadius="8dp" />
+
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/AttachedMedia"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginEnd="8dp"
-                    android:text="Save Draft"
-                    android:textColor="@color/button_background"
-                    app:strokeColor="@color/button_background"
-                    app:iconTint="@color/button_background"
-                    app:cornerRadius="8dp" />
+                    android:layout_marginTop="16dp"
+                    android:text="Attached Media"
+                    android:textColor="@color/primary_text"
+                    android:textSize="@dimen/composer_section_title_size"
+                    android:textStyle="bold" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnAddMedia"
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvMediaPreviews"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:clipToPadding="false"
+                    android:paddingBottom="4dp"
+                    android:nestedScrollingEnabled="false" />
+
+                <TextView
+                    android:id="@+id/tvMediaPlaceholder"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="40dp"
+                    android:layout_marginBottom="40dp"
+                    android:gravity="center"
+                    android:text="The attached media will appear here"
+                    android:textColor="@color/secondary_text"
+                    android:textSize="14sp"
+                    android:textStyle="italic" />
+
+                <TextView
+                    android:id="@+id/tvDraftsTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Add Photos/Videos"
-                    android:backgroundTint="@color/button_background"
-                    android:textColor="@color/button_text"
-                    app:icon="@drawable/camera"
-                    app:iconTint="@color/button_text"
-                    app:cornerRadius="8dp" />
+                    android:layout_marginTop="16dp"
+                    android:text="Your Drafts"
+                    android:textStyle="bold"
+                    android:textSize="@dimen/composer_section_title_size"
+                    android:textColor="@color/primary_text" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvDrafts"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:clipToPadding="false"
+                    android:paddingBottom="4dp"
+                    android:nestedScrollingEnabled="false" />
+
+                <TextView
+                    android:id="@+id/tvDraftsPlaceholder"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="40dp"
+                    android:layout_marginBottom="40dp"
+                    android:gravity="center"
+                    android:text="The drafts will appear here"
+                    android:textColor="@color/secondary_text"
+                    android:textSize="14sp"
+                    android:textStyle="italic" />
 
             </LinearLayout>
-
-            <TextView
-                android:id="@+id/AttachedMedia"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="Attached Media"
-                android:textColor="@color/primary_text"
-                android:textSize="@dimen/composer_section_title_size"
-                android:textStyle="bold" />
-
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rvMediaPreviews"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:clipToPadding="false"
-                android:paddingBottom="4dp" />
-
-            <TextView
-                android:id="@+id/tvMediaPlaceholder"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="40dp"
-                android:layout_marginBottom="40dp"
-                android:gravity="center"
-                android:text="The attached media will appear here"
-                android:textColor="@color/secondary_text"
-                android:textSize="14sp"
-                android:textStyle="italic" />
-
-            <TextView
-                android:id="@+id/tvDraftsTitle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="Your Drafts"
-                android:textStyle="bold"
-                android:textSize="@dimen/composer_section_title_size"
-                android:textColor="@color/primary_text" />
-
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rvDrafts"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:clipToPadding="false"
-                android:paddingBottom="4dp" />
-
-            <TextView
-                android:id="@+id/tvDraftsPlaceholder"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="40dp"
-                android:layout_marginBottom="100dp"
-                android:gravity="center"
-                android:text="The drafts will appear here"
-                android:textColor="@color/secondary_text"
-                android:textSize="14sp"
-                android:textStyle="italic" />
-
-        </LinearLayout>
-    </androidx.core.widget.NestedScrollView>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:padding="16dp"
-        android:background="@color/home_background"
-        android:orientation="vertical">
-
-        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-            android:id="@+id/fabPost"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Share to Social Apps"
-            app:icon="@drawable/send"
-            android:backgroundTint="@color/button_background"
-            android:textColor="@color/button_text"
-            app:iconTint="@color/button_text"
-            app:cornerRadius="16dp" />
-    </LinearLayout>
+        </androidx.core.widget.NestedScrollView>
+    </RelativeLayout>
 
     <FrameLayout
         android:id="@+id/loadingOverlay"

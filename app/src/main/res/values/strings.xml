@@ -82,7 +82,7 @@
 
     <!-- Logout -->
     <string name="logout_title">Logout</string>
-    <string name="logout_message">Are you sure you want to logout? All local browsing data will be cleared.</string>
+    <string name="logout_message">Are you sure you want to log out? All local browsing data will be cleared.</string>
     <string name="logout_confirm">Logout</string>
     <string name="login_success">Login successful</string>
     <string name="logout_success">Logout successful</string>
@@ -101,7 +101,7 @@
     <string name="search_engine_desc">Choose the service used for web searches.</string>
     <string name="search_predictions_desc">Show suggestions as you type in the search bar.</string>
     <string name="advance_animations_title">Advance Animations</string>
-    <string name="advance_animations_desc">Enables the dynamic bottom bar. This feature is in testing mode and may not work properly.</string>
+    <string name="advance_animations_desc">Enables the dynamic bottom bar for immersive browsing.</string>
     <string name="restart_app_message">The app needs to restart to apply this change. Restart now?</string>
     <string name="find_on_page">Find on Page</string>
     <string name="share_qr">Share as QR Code</string>

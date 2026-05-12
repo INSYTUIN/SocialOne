@@ -14,13 +14,17 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import java.net.HttpURLConnection;
+import java.net.URL;
+
 /**
  * Utility class to manage and apply ad-blocking host lists.
- * Loads and processes host lists synchronously on the thread it's called from.
+ * Loads and processes host lists asynchronously to avoid blocking the UI thread.
  */
 public class AdBlockerHosts {
 
     private static final String TAG = "AdBlocker";
+    private static final String EASYLIST_URL = "https://easylist.to/easylist/easylist.txt";
     
     // Fast lookup for domain-based filters
     private static final Set<String> BLOCKED_DOMAINS = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
@@ -30,19 +34,59 @@ public class AdBlockerHosts {
     private static final List<String> URL_FILTERS = Collections.synchronizedList(new ArrayList<String>());
     private static final List<String> URL_WHITELIST = Collections.synchronizedList(new ArrayList<String>());
 
+    private static boolean isLoading = false;
+
     /**
-     * Loads filter lists from the asset file.
-     * Supports basic AdBlock syntax: ||domain^, @@ (exceptions), and path patterns.
+     * Loads filters from the official EasyList URL asynchronously.
+     */
+    public static void loadFromUrl() {
+        if (isLoading) return;
+        isLoading = true;
+
+        new Thread(() -> {
+            Log.d(TAG, "Starting to load filters from URL: " + EASYLIST_URL);
+            try {
+                URL url = new URL(EASYLIST_URL);
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.setConnectTimeout(15000);
+                connection.setReadTimeout(15000);
+                connection.connect();
+
+                if (connection.getResponseCode() == HttpURLConnection.HTTP_OK) {
+                    try (InputStream is = connection.getInputStream()) {
+                        parseFilters(is);
+                    }
+                } else {
+                    Log.e(TAG, "Failed to load filters from URL. Response code: " + connection.getResponseCode());
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error downloading ad filters", e);
+            } finally {
+                isLoading = false;
+            }
+        }).start();
+    }
+
+    /**
+     * Loads filter lists from the asset file as a fallback.
      */
     public static void loadFromAssets(Context context) {
+        new Thread(() -> {
+            try (InputStream is = context.getAssets().open("ad_hosts.txt")) {
+                parseFilters(is);
+            } catch (IOException e) {
+                Log.e(TAG, "Error loading ad filters from assets", e);
+            }
+        }).start();
+    }
 
-        try (InputStream is = context.getAssets().open("ad_hosts.txt");
-             BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
-
-            BLOCKED_DOMAINS.clear();
-            WHITELIST_DOMAINS.clear();
-            URL_FILTERS.clear();
-            URL_WHITELIST.clear();
+    private static void parseFilters(InputStream is) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
+            // We don't clear until we have a successful stream to avoid losing current filters on failure
+            Set<String> newBlockedDomains = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+            Set<String> newWhitelistDomains = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+            List<String> newUrlFilters = Collections.synchronizedList(new ArrayList<String>());
+            List<String> newUrlWhitelist = Collections.synchronizedList(new ArrayList<String>());
 
             int count = 0;
             String line;
@@ -61,18 +105,18 @@ public class AdBlockerHosts {
                 if (line.startsWith("||") && line.endsWith("^")) {
                     String domain = line.substring(2, line.length() - 1).toLowerCase();
                     if (isException) {
-                        WHITELIST_DOMAINS.add(domain);
+                        newWhitelistDomains.add(domain);
                     } else {
-                        BLOCKED_DOMAINS.add(domain);
+                        newBlockedDomains.add(domain);
                     }
                 }
                 // Handle path-based filters or simple substrings
                 else if (line.contains("/") || line.contains("*")) {
                     String pattern = line.toLowerCase();
                     if (isException) {
-                        URL_WHITELIST.add(pattern);
+                        newUrlWhitelist.add(pattern);
                     } else {
-                        URL_FILTERS.add(pattern);
+                        newUrlFilters.add(pattern);
                     }
                 }
                 // Default to host-based blocking
@@ -89,17 +133,27 @@ public class AdBlockerHosts {
 
                     String host = line.toLowerCase();
                     if (isException) {
-                        WHITELIST_DOMAINS.add(host);
+                        newWhitelistDomains.add(host);
                     } else {
-                        BLOCKED_DOMAINS.add(host);
+                        newBlockedDomains.add(host);
                     }
                 }
                 count++;
             }
 
+            // Atomically update the active lists
+            BLOCKED_DOMAINS.clear();
+            BLOCKED_DOMAINS.addAll(newBlockedDomains);
+            WHITELIST_DOMAINS.clear();
+            WHITELIST_DOMAINS.addAll(newWhitelistDomains);
+            URL_FILTERS.clear();
+            URL_FILTERS.addAll(newUrlFilters);
+            URL_WHITELIST.clear();
+            URL_WHITELIST.addAll(newUrlWhitelist);
+
             Log.d(TAG, "Loaded " + count + " filters (Domains: " + BLOCKED_DOMAINS.size() + ", URL Patterns: " + URL_FILTERS.size() + ")");
         } catch (IOException e) {
-            Log.e(TAG, "Error loading ad filters", e);
+            Log.e(TAG, "Error parsing ad filters", e);
         }
     }
 

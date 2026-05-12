@@ -83,7 +83,13 @@ public class PreferenceManager {
             try {
                 JSONArray array = new JSONArray(json);
                 for (int i = 0; i < array.length(); i++) {
-                    historyList.add(array.getString(i));
+                    Object item = array.get(i);
+                    if (item instanceof JSONObject) {
+                        JSONObject obj = (JSONObject) item;
+                        historyList.add(obj.getString("url") + "|" + obj.optLong("timestamp", System.currentTimeMillis()));
+                    } else {
+                        historyList.add(item.toString() + "|" + System.currentTimeMillis());
+                    }
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -93,15 +99,27 @@ public class PreferenceManager {
     }
 
     public void saveHistory(List<String> historyList) {
+        saveHistory(historyList, false);
+    }
+
+    public void saveHistory(List<String> historyList, boolean force) {
         JSONArray array = new JSONArray();
         if (historyList != null) {
-            for (String url : historyList) {
-                array.put(url);
+            for (String entry : historyList) {
+                try {
+                    String[] parts = entry.split("\\|", 2);
+                    JSONObject obj = new JSONObject();
+                    obj.put("url", parts[0]);
+                    obj.put("timestamp", parts.length > 1 ? Long.parseLong(parts[1]) : System.currentTimeMillis());
+                    array.put(obj);
+                } catch (Exception e) {
+                    array.put(entry);
+                }
             }
         }
         sharedPreferences.edit().putString(HISTORY_KEY, array.toString()).apply();
         if (firestoreManager != null) {
-            firestoreManager.saveHistory(historyList);
+            firestoreManager.saveHistory(historyList, force);
         }
     }
 

@@ -19,7 +19,12 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.transition.AutoTransition;
+import android.transition.ChangeBounds;
+import android.transition.Fade;
+import android.transition.Slide;
 import android.transition.TransitionManager;
+import android.transition.TransitionSet;
+import android.view.Gravity;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -169,6 +174,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private RecyclerView tabSwitcherRecyclerView;
     private RecyclerView sitesRecyclerView;
     private ImageButton btnNormalMode, btnWorkspaceMode;
+    private View modeSelectionIndicator;
     private boolean isWorkspaceTabMode = false;
     private final List<String> filteredTabList = new ArrayList<>();
     private final List<Integer> filteredIndices = new ArrayList<>();
@@ -195,6 +201,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     private static final String QUICK_ACCESS_MESSAGES_URL = "home://quickaccess_messages";
     private static final String INCOGNITO_HOME_URL = "home://incognito";
     private static final String WORKSPACE_URL = "home://workspace";
+    private static final String WORKSPACE_MARKER = "\u200B";
 
     // UI Panels and interactive elements
     private CardView controlsPanel, searchPanel, moreOptionsPanel, tabSwitcherPanel;
@@ -265,6 +272,18 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
     private boolean isAuthenticated = false;
     private boolean isAuthenticating = false;
+
+    private String cleanUrl(String url) {
+        if (url == null) return null;
+        if (url.endsWith(WORKSPACE_MARKER)) {
+            return url.substring(0, url.length() - WORKSPACE_MARKER.length());
+        }
+        return url;
+    }
+
+    private boolean isWorkspaceTab(String url) {
+        return url != null && url.endsWith(WORKSPACE_MARKER);
+    }
 
     /**
      * Checks if biometric lock is enabled in settings and initiates authentication if needed.
@@ -351,7 +370,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        AdBlockerHosts.loadFromAssets(this);
+        AdBlockerHosts.loadFromAssets(this); // Fast local fallback
+        AdBlockerHosts.loadFromUrl();       // Update with official EasyList from the web
         sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
 
         EdgeToEdge.enable(this);
@@ -407,37 +427,39 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             int effectiveImeBottom = (isFindOnPageActive || isAuthenticating) ? 0 : ime.bottom;
             int bottomPadding = Math.max(systemBars.bottom, effectiveImeBottom);
 
+            // Always show app content above system navigation buttons by applying bottom padding to the root
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
+
+            // Calculate how much extra padding is needed for the IME (keyboard)
+            // if it's taller than the system navigation bar.
+            int extraImePadding = Math.max(0, effectiveImeBottom - systemBars.bottom);
+            bottomUiContainer.setPadding(0, 0, 0, extraImePadding);
+
             RelativeLayout.LayoutParams lp = (RelativeLayout.LayoutParams) findViewById(R.id.contentWrapper).getLayoutParams();
 
             if (!advancedAnim && isHome) {
                 // Home tab in Normal Mode: Treat bottom bar as fixed boundary
-                // This keeps the dashboard perfectly between status and navigation bars
-                v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
-                bottomUiContainer.setPadding(0, 0, 0, Math.max(0, effectiveImeBottom - systemBars.bottom));
                 lp.addRule(RelativeLayout.ABOVE, R.id.bottomUiContainer);
 
                 // Content fits exactly above the bar, no extra bottom padding needed
                 if (fragmentContainer != null) fragmentContainer.setPadding(0, 0, 0, 0);
                 if (webViewContainer != null) webViewContainer.setPadding(0, 0, 0, 0);
             } else {
-
-                // Other tabs or Advanced Mode: Immersive edge-to-edge drawing
-                // This allows content to draw behind the floating/semi-transparent panels
-                v.setPadding(systemBars.left, systemBars.top, systemBars.right, 0);
-                bottomUiContainer.setPadding(0, 0, 0, bottomPadding);
+                // Other tabs or Advanced Mode: Immersive edge-to-edge drawing inside the safe area
                 lp.removeRule(RelativeLayout.ABOVE);
 
                 int barHeight = UIUtils.dpToPx(this, 80);
-                int extraContentPadding = bottomPadding + barHeight;
-
+                
                 if (webViewContainer != null) {
-                    // Normal Mode + Website: Use padding to clear the fixed bar while staying immersive
-                    // Advanced Mode: Use 0 padding for the truly floating experience
-                    int webPadding = (!advancedAnim) ? extraContentPadding : 0;
+                    // Normal Mode + Website: Use padding to clear the fixed bar
+                    // Advanced Mode: Use 0 padding for the truly floating experience (safe above nav bar)
+                    int webPadding = (!advancedAnim) ? (extraImePadding + barHeight) : 0;
                     webViewContainer.setPadding(0, 0, 0, webPadding);
                 }
 
-                if (fragmentContainer != null) fragmentContainer.setPadding(0, 0, 0, extraContentPadding);
+                if (fragmentContainer != null) {
+                    fragmentContainer.setPadding(0, 0, 0, extraImePadding + barHeight);
+                }
             }
 
 
@@ -494,6 +516,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
         btnNormalMode = findViewById(R.id.btnNormalMode);
         btnWorkspaceMode = findViewById(R.id.btnWorkspaceMode);
+        modeSelectionIndicator = findViewById(R.id.modeSelectionIndicator);
 
         btnNormalMode.setOnClickListener(v -> {
             if (isWorkspaceTabMode) {
@@ -665,8 +688,10 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
         // Enable and customize animations
         androidx.recyclerview.widget.DefaultItemAnimator animator = new androidx.recyclerview.widget.DefaultItemAnimator();
-        animator.setAddDuration(ANIM_DURATION);
-        animator.setRemoveDuration(ANIM_DURATION);
+        animator.setAddDuration(200);
+        animator.setRemoveDuration(200);
+        animator.setMoveDuration(200);
+        animator.setChangeDuration(200);
         tabSwitcherRecyclerView.setItemAnimator(animator);
 
         tabSwitcherPanel.setOnTouchListener((v, event) -> {
@@ -718,13 +743,13 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
         // Setup button click listeners
         toggleButton.setOnClickListener(v -> {
-            beginPanelTransition();
-
             if (controlsPanel.getVisibility() == View.VISIBLE || tabSwitcherPanel.getVisibility() == View.VISIBLE) {
+                beginPanelTransition(controlsPanel.getVisibility() == View.VISIBLE ? controlsPanel : tabSwitcherPanel);
                 controlsPanel.setVisibility(View.GONE);
                 tabSwitcherPanel.setVisibility(View.GONE);
                 updateDragHandleState();
             } else {
+                beginPanelTransition(controlsPanel);
                 hideAllPanelsInternal();
                 controlsPanel.setVisibility(View.VISIBLE);
                 updateDragHandleState();
@@ -738,16 +763,20 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             }
             hideKeyboard(); // Hide keyboard first to ensure accurate height calculation
             updateTabSwitcherHeight(); // Calculate height before showing to avoid jumps
-            beginPanelTransition();
 
             if (tabSwitcherPanel.getVisibility() == View.VISIBLE) {
-                tabSwitcherPanel.setVisibility(View.GONE);
-                boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
-                if (advancedAnim && handleTouchArea != null) handleTouchArea.setVisibility(View.VISIBLE);
-                updateDragHandleState();
+                performTabSwitcherBubbleAnimation(false);
             } else {
-                updateCurrentTabPreview();
+                // Ensure other overlapping panels are hidden with standard transition
+                if (searchPanel.getVisibility() == View.VISIBLE || moreOptionsPanel.getVisibility() == View.VISIBLE) {
+                    beginPanelTransition();
+                    searchPanel.setVisibility(View.GONE);
+                    moreOptionsPanel.setVisibility(View.GONE);
+                }
 
+                isAnimatingToolbar = true;
+                updateCurrentTabPreview();
+                
                 // Sync tab mode with current URL on open
                 if (currentUrl != null) {
                     if (incognitoTabs.contains(currentUrl)) {
@@ -763,16 +792,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
                 updateTabSwitcherHeight(); // Dynamically fit screen
 
-                // Ensure other overlapping panels are hidden
-                searchPanel.setVisibility(View.GONE);
-                moreOptionsPanel.setVisibility(View.GONE);
+                performTabSwitcherBubbleAnimation(true);
 
-                // Reset animation properties to ensure consistency with TransitionManager
-                tabSwitcherPanel.setAlpha(1f);
-                tabSwitcherPanel.setScaleX(1f);
-                tabSwitcherPanel.setScaleY(1f);
-
-                tabSwitcherPanel.setVisibility(View.VISIBLE);
                 if (handleTouchArea != null) handleTouchArea.setVisibility(View.GONE);
 
                 updateTabSwitcherList();
@@ -801,12 +822,13 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 Toast.makeText(this, "Global search is not available in landscape mode", Toast.LENGTH_SHORT).show();
                 return;
             }
-            beginPanelTransition();
 
             if (searchPanel.getVisibility() == View.VISIBLE) {
+                beginPanelTransition(searchPanel);
                 searchPanel.setVisibility(View.GONE);
                 updateDragHandleState();
             } else {
+                beginPanelTransition(searchPanel);
                 hideAllPanelsInternal();
                 searchPanel.setVisibility(View.VISIBLE);
                 updateDragHandleState();
@@ -820,12 +842,13 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             }
             hideKeyboard(); // Hide keyboard first to ensure accurate height calculation
             updateMoreOptionsHeight(); // Calculate height before showing
-            beginPanelTransition();
 
             if (moreOptionsPanel.getVisibility() == View.VISIBLE) {
+                beginPanelTransition(moreOptionsPanel);
                 moreOptionsPanel.setVisibility(View.GONE);
                 updateDragHandleState();
             } else {
+                beginPanelTransition(moreOptionsPanel);
                 hideAllPanelsInternal();
                 updateMoreOptionsHeight(); // Dynamically fit screen
                 moreOptionsPanel.setVisibility(View.VISIBLE);
@@ -1118,9 +1141,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             @Override
             public void handleOnBackPressed() {
                 if (tabSwitcherPanel.getVisibility() == View.VISIBLE) {
-                    beginPanelTransition();
-                    tabSwitcherPanel.setVisibility(View.GONE);
-                    updateDragHandleState();
+                    performTabSwitcherBubbleAnimation(false);
                 } else if (searchPanel.getVisibility() == View.VISIBLE ||
                         moreOptionsPanel.getVisibility() == View.VISIBLE ||
                         controlsPanel.getVisibility() == View.VISIBLE) {
@@ -1244,17 +1265,121 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
     }
 
     /**
+     * Performs a bubble pop animation for the tab switcher panel.
+     * @param show True to open with bubble pop, false to shrink back to center.
+     */
+    private void performTabSwitcherBubbleAnimation(boolean show) {
+        if (tabSwitcherPanel == null) return;
+
+        if (show) {
+            tabSwitcherPanel.setVisibility(View.VISIBLE);
+            tabSwitcherPanel.setAlpha(0f);
+
+            tabSwitcherPanel.getViewTreeObserver().addOnGlobalLayoutListener(new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
+                @Override
+                public void onGlobalLayout() {
+                    tabSwitcherPanel.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+
+                    android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+                    float screenCenterX = dm.widthPixels / 2f;
+                    float screenCenterY = dm.heightPixels / 2f;
+
+                    int[] location = new int[2];
+                    tabSwitcherPanel.getLocationOnScreen(location);
+
+                    float panelCenterX = location[0] + tabSwitcherPanel.getWidth() / 2f;
+                    float panelCenterY = location[1] + tabSwitcherPanel.getHeight() / 2f;
+
+                    tabSwitcherPanel.setTranslationX(screenCenterX - panelCenterX);
+                    tabSwitcherPanel.setTranslationY(screenCenterY - panelCenterY);
+                    tabSwitcherPanel.setScaleX(0f);
+                    tabSwitcherPanel.setScaleY(0f);
+
+                    tabSwitcherPanel.animate()
+                            .alpha(1f)
+                            .scaleX(1f)
+                            .scaleY(1f)
+                            .translationX(0f)
+                            .translationY(0f)
+                            .setDuration(200)
+                            .setInterpolator(new android.view.animation.OvershootInterpolator(1.2f))
+                            .withEndAction(() -> isAnimatingToolbar = false)
+                            .start();
+                }
+            });
+        } else {
+            if (tabSwitcherPanel.getVisibility() != View.VISIBLE) return;
+            isAnimatingToolbar = true;
+
+            android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+            float screenCenterX = dm.widthPixels / 2f;
+            float screenCenterY = dm.heightPixels / 2f;
+
+            int[] location = new int[2];
+            tabSwitcherPanel.getLocationOnScreen(location);
+            float panelCenterX = location[0] + tabSwitcherPanel.getWidth() / 2f;
+            float panelCenterY = location[1] + tabSwitcherPanel.getHeight() / 2f;
+
+            tabSwitcherPanel.animate()
+                    .alpha(0f)
+                    .scaleX(0f)
+                    .scaleY(0f)
+                    .translationX(screenCenterX - panelCenterX)
+                    .translationY(screenCenterY - panelCenterY)
+                    .setDuration(200)
+                    .setInterpolator(new android.view.animation.AccelerateInterpolator())
+                    .withEndAction(() -> {
+                        tabSwitcherPanel.setVisibility(View.GONE);
+                        // Reset properties for next time
+                        tabSwitcherPanel.setTranslationX(0f);
+                        tabSwitcherPanel.setTranslationY(0f);
+                        tabSwitcherPanel.setScaleX(1f);
+                        tabSwitcherPanel.setScaleY(1f);
+                        tabSwitcherPanel.setAlpha(1f);
+                        isAnimatingToolbar = false;
+
+                        boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
+                        if (advancedAnim && handleTouchArea != null) handleTouchArea.setVisibility(View.VISIBLE);
+                        updateDragHandleState();
+                    })
+                    .start();
+        }
+    }
+
+    /**
      * Animates transitions for UI panels in the bottom container.
      */
     private void beginPanelTransition() {
+        View visiblePanel = null;
+        if (controlsPanel != null && controlsPanel.getVisibility() == View.VISIBLE) visiblePanel = controlsPanel;
+        else if (searchPanel != null && searchPanel.getVisibility() == View.VISIBLE) visiblePanel = searchPanel;
+        else if (moreOptionsPanel != null && moreOptionsPanel.getVisibility() == View.VISIBLE) visiblePanel = moreOptionsPanel;
+        else if (tabSwitcherPanel != null && tabSwitcherPanel.getVisibility() == View.VISIBLE) visiblePanel = tabSwitcherPanel;
+
+        beginPanelTransition(visiblePanel);
+    }
+
+    private void beginPanelTransition(@Nullable View slidingView) {
         hideKeyboard();
         isAnimatingToolbar = true;
-        AutoTransition transition = new AutoTransition();
-        transition.setDuration(ANIM_DURATION);
-        TransitionManager.beginDelayedTransition(bottomUiContainer, transition);
+
+        TransitionSet set = new TransitionSet();
+        set.addTransition(new ChangeBounds());
+        set.addTransition(new Fade());
+
+        if (slidingView != null) {
+            Slide slide = new Slide(Gravity.BOTTOM);
+            slide.addTarget(slidingView);
+            set.addTransition(slide);
+        }
+
+        set.setDuration(200); // Slightly longer for a smoother feel
+        set.setInterpolator(new android.view.animation.DecelerateInterpolator());
+
+        TransitionManager.beginDelayedTransition(bottomUiContainer, set);
 
         // Reset the animation flag after the transition completes
-        mainHandler.postDelayed(() -> isAnimatingToolbar = false, ANIM_DURATION + 50);
+        mainHandler.postDelayed(() -> isAnimatingToolbar = false, 350);
 
         // Update immediately to reflect intended state change
         updateDragHandleState();
@@ -1349,11 +1474,16 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         tabSwitcherAdapter.setSelectedPosition(filteredPos);
 
         // Update switch UI
-        if (btnNormalMode != null && btnWorkspaceMode != null) {
-            btnNormalMode.setBackgroundResource(isWorkspaceTabMode ? android.R.color.transparent : R.drawable.bg_tab_switch_selected);
-            btnNormalMode.setColorFilter(isWorkspaceTabMode ? androidx.core.content.ContextCompat.getColor(this, R.color.icon_tint) : androidx.core.content.ContextCompat.getColor(this, R.color.button_text));
+        if (btnNormalMode != null && btnWorkspaceMode != null && modeSelectionIndicator != null) {
+            float targetX = isWorkspaceTabMode ? UIUtils.dpToPx(this, 48) : 0;
 
-            btnWorkspaceMode.setBackgroundResource(isWorkspaceTabMode ? R.drawable.bg_tab_switch_selected : android.R.color.transparent);
+            modeSelectionIndicator.animate()
+                    .translationX(targetX)
+                    .setDuration(200)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                    .start();
+
+            btnNormalMode.setColorFilter(isWorkspaceTabMode ? androidx.core.content.ContextCompat.getColor(this, R.color.icon_tint) : androidx.core.content.ContextCompat.getColor(this, R.color.button_text));
             btnWorkspaceMode.setColorFilter(isWorkspaceTabMode ? androidx.core.content.ContextCompat.getColor(this, R.color.button_text) : androidx.core.content.ContextCompat.getColor(this, R.color.icon_tint));
         }
     }
@@ -1417,13 +1547,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         if (position >= 0 && position < filteredIndices.size()) {
             int realPosition = filteredIndices.get(position);
             onSiteClick(realPosition);
-            beginPanelTransition();
-            tabSwitcherPanel.setVisibility(View.GONE);
-
-            boolean advancedAnim = sharedPreferences.getBoolean(ADVANCED_ANIM_KEY, false);
-            if (advancedAnim && handleTouchArea != null) handleTouchArea.setVisibility(View.VISIBLE);
-
-            updateDragHandleState();
+            performTabSwitcherBubbleAnimation(false);
         }
     }
 
@@ -1943,8 +2067,8 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                         }
                     }
                     historyList.clear();
-                    saveHistory();
-                    if (historyAdapter != null) historyAdapter.notifyDataSetChanged();
+                    saveHistory(true); // Force sync to clear database
+                    if (historyAdapter != null) historyAdapter.notifyHistoryChanged();
                     if (homeFragment != null) homeFragment.notifyDataChanged();
                     Toast.makeText(this, R.string.history_cleared, Toast.LENGTH_SHORT).show();
 
@@ -1981,20 +2105,22 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 .setTitle(R.string.dialog_delete_history_title)
                 .setMessage(url)
                 .setPositiveButton(R.string.delete, (dialog, which) -> {
-                    historyList.remove(position);
-                    saveHistory();
-                    if (historyAdapter != null) historyAdapter.notifyItemRemoved(position);
+                    if (position >= 0 && position < historyList.size()) {
+                        historyList.remove(position);
+                        saveHistory(true); // Force sync to reflect deletion in database
+                        if (historyAdapter != null) historyAdapter.notifyHistoryChanged();
 
-                    if (historyDialog != null && historyDialog.isShowing()) {
-                        TextView tvEmpty = historyDialog.findViewById(R.id.tvEmptyMessage);
-                        RecyclerView rv = historyDialog.findViewById(R.id.historyRecyclerView);
-                        if (tvEmpty != null && rv != null) {
-                            tvEmpty.setVisibility(historyList.isEmpty() ? View.VISIBLE : View.GONE);
-                            rv.setVisibility(historyList.isEmpty() ? View.GONE : View.VISIBLE);
+                        if (historyDialog != null && historyDialog.isShowing()) {
+                            TextView tvEmpty = historyDialog.findViewById(R.id.tvEmptyMessage);
+                            RecyclerView rv = historyDialog.findViewById(R.id.historyRecyclerView);
+                            if (tvEmpty != null && rv != null) {
+                                tvEmpty.setVisibility(historyList.isEmpty() ? View.VISIBLE : View.GONE);
+                                rv.setVisibility(historyList.isEmpty() ? View.GONE : View.VISIBLE);
+                            }
                         }
-                    }
 
-                    if (homeFragment != null) homeFragment.notifyDataChanged();
+                        if (homeFragment != null) homeFragment.notifyDataChanged();
+                    }
                 })
 
                 .setNegativeButton(R.string.cancel, null)
@@ -2119,7 +2245,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
 
             if (isWorkspace) {
                 options.add("Clear Active Workspace");
-                icons.add(R.drawable.trashbin);
+                icons.add(R.drawable.suitcase);
             }
 
             options.add(getString(R.string.option_copy_link));
@@ -2254,10 +2380,13 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         // 2. Add the new workspace URLs to the session (always at the end)
         for (String url : workspaceUrls) {
             if (url.startsWith("home://")) continue; // Never add internal dashboards to workspace list
-            workspaceTabs.add(url);
-            if (!siteList.contains(url)) {
-                siteList.add(url);
-            }
+            
+            String markedUrl = url + WORKSPACE_MARKER;
+            workspaceTabs.add(markedUrl);
+            
+            // Always add a new tab for workspace, even if the base URL exists as a normal tab
+            // This prevents normal tabs from being "converted" to workspace tabs
+            siteList.add(markedUrl);
         }
 
         saveSites();
@@ -2274,9 +2403,18 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         sitesAdapter.notifyDataSetChanged();
         updateTabSwitcherList();
 
-        int firstTabPos = siteList.indexOf(workspaceUrls.get(0));
+        int firstTabPos = -1;
+        for (String url : workspaceUrls) {
+            if (!url.startsWith("home://")) {
+                firstTabPos = siteList.indexOf(url + WORKSPACE_MARKER);
+                break;
+            }
+        }
+        
         if (firstTabPos != -1) {
             onSiteClick(firstTabPos);
+        } else {
+            onSiteClick(siteList.indexOf(WORKSPACE_URL));
         }
 
         Toast.makeText(this, "Workspace Applied", Toast.LENGTH_SHORT).show();
@@ -2906,6 +3044,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 cancelTimeout(view);
+
+                if (url.contains("youtube.com")) {
+                    injectYouTubeAdBlocker(view);
+                }
+
                 if (currentUrl != null && tabMap.get(currentUrl) == view) {
                     progressBar.setVisibility(View.GONE);
                     swipeRefreshLayout.setRefreshing(false);
@@ -2938,13 +3081,16 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 }
 
                 boolean isIncognito = (oldUrl != null && incognitoTabs.contains(oldUrl));
+                boolean wasWorkspace = (oldUrl != null && isWorkspaceTab(oldUrl));
 
                 if (!url.startsWith("home://") && !isIncognito && !url.startsWith("data:text/html")) {
                     addToHistory(url);
                 }
 
                 if (oldUrl != null && !oldUrl.equals(url) && tabIndex != -1) {
-                    siteList.set(tabIndex, url);
+                    boolean isTargetDashboard = url.startsWith("home://");
+                    String finalUrl = (wasWorkspace && !isTargetDashboard) ? url + WORKSPACE_MARKER : url;
+                    siteList.set(tabIndex, finalUrl);
 
                     // Check if old URL is still used by other tabs before removing from map
                     boolean isOldUrlShared = false;
@@ -2959,26 +3105,26 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                         tabMap.remove(oldUrl);
                         Bitmap preview = tabPreviews.remove(oldUrl);
                         if (preview != null) {
-                            tabPreviews.put(url, preview);
+                            tabPreviews.put(finalUrl, preview);
                         }
                     }
 
-                    tabMap.put(url, view);
+                    tabMap.put(finalUrl, view);
 
                     if (tabIndex == currentPosition) {
-                        currentUrl = url;
+                        currentUrl = finalUrl;
                     }
 
                     if (incognitoTabs.contains(oldUrl)) {
                         incognitoTabs.remove(oldUrl);
-                        incognitoTabs.add(url);
+                        incognitoTabs.add(finalUrl);
                         sitesAdapter.setIncognitoTabs(incognitoTabs);
                     }
 
                     if (workspaceTabs.contains(oldUrl)) {
                         workspaceTabs.remove(oldUrl);
                         if (!url.startsWith("home://")) {
-                            workspaceTabs.add(url);
+                            workspaceTabs.add(finalUrl);
                         }
                         if (sitesAdapter != null) {
                             sitesAdapter.setWorkspaceTabs(workspaceTabs);
@@ -3008,7 +3154,7 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
         }
 
         if (!tabStateManager.restoreWebViewState(url, wv, incognitoTabs)) {
-            wv.loadUrl(url);
+            wv.loadUrl(cleanUrl(url));
         }
 
         wv.setAlpha(0f);
@@ -3085,6 +3231,42 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
                 "<button class='btn' onclick='SocialOneNative.retry()'>Try Again</button>" +
                 "</div></body></html>";
         view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
+    }
+
+    /**
+     * Injects a specialized JavaScript ad-blocker for YouTube to handle SSAI and standard ads.
+     */
+    private void injectYouTubeAdBlocker(WebView wv) {
+        String js = "(function() {" +
+                "  const block = () => {" +
+                "    const ad = document.querySelector('.ad-showing, .ad-interrupting');" +
+                "    const video = document.querySelector('video');" +
+                "    if (ad && video) {" +
+                "      if (video.playbackRate !== 16) {" +
+                "        video.muted = true;" +
+                "        video.playbackRate = 16;" +
+                "      }" +
+                "    } else if (video && video.playbackRate === 16) {" +
+                "      video.playbackRate = 1;" +
+                "      video.muted = false;" +
+                "    }" +
+                "    const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern');" +
+                "    if (skipBtn) skipBtn.click();" +
+                "    " +
+                "    // Hide ad elements via CSS injection if not already done" +
+                "    if (!document.getElementById('socialone-yt-fix')) {" +
+                "      const style = document.createElement('style');" +
+                "      style.id = 'socialone-yt-fix';" +
+                "      style.innerHTML = '.video-ads, .ytp-ad-module, .ytp-ad-overlay-container, .ad-showing, .ad-interrupting { display: none !important; opacity: 0 !important; visibility: hidden !important; }';" +
+                "      document.head.appendChild(style);" +
+                "    }" +
+                "  };" +
+                "  if (!window.socialOneYtInterval) {" +
+                "    window.socialOneYtInterval = setInterval(block, 500);" +
+                "  }" +
+                "  block();" +
+                "})();";
+        wv.evaluateJavascript(js, null);
     }
 
 
@@ -3637,7 +3819,11 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
      * Saves browsing history to SharedPreferences and Cloud.
      */
     private void saveHistory() {
-        preferenceManager.saveHistory(historyList);
+        saveHistory(false);
+    }
+
+    private void saveHistory(boolean force) {
+        preferenceManager.saveHistory(historyList, force);
     }
 
 
@@ -3659,8 +3845,18 @@ public class MainActivity extends AppCompatActivity implements SitesAdapter.OnSi
      */
     private void addToHistory(String url) {
         if (url == null || url.isEmpty() || incognitoTabs.contains(url)) return;
-        historyList.remove(url);
-        historyList.add(0, url);
+        
+        // Find and remove existing entry for this URL to move it to the top
+        for (int i = 0; i < historyList.size(); i++) {
+            String entry = historyList.get(i);
+            if (entry.startsWith(url + "|") || entry.equals(url)) {
+                historyList.remove(i);
+                break;
+            }
+        }
+        
+        historyList.add(0, url + "|" + System.currentTimeMillis());
+
         if (historyList.size() > 50) {
             historyList.remove(historyList.size() - 1);
         }

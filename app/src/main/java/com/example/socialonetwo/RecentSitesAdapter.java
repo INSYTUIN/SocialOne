@@ -81,11 +81,12 @@ public class RecentSitesAdapter extends RecyclerView.Adapter<RecentSitesAdapter.
         }
         Set<String> seen = new HashSet<>();
         
-        for (String url : historyList) {
+        for (String entry : historyList) {
+            String url = entry.contains("|") ? entry.split("\\|")[0] : entry;
             String key = filterUniqueDomains ? getDomain(url) : url;
             if (!seen.contains(key)) {
                 seen.add(key);
-                filteredRecentSites.add(url);
+                filteredRecentSites.add(entry);
             }
             if (maxItems > 0 && filteredRecentSites.size() >= maxItems) break;
         }
@@ -96,7 +97,8 @@ public class RecentSitesAdapter extends RecyclerView.Adapter<RecentSitesAdapter.
      * Extracts the domain name from a URL for filtering and display purposes.
      */
     private String getDomain(String url) {
-        String domain = url.replace("https://", "").replace("http://", "").replace("www.", "");
+        String cleanUrl = url.contains("|") ? url.split("\\|")[0] : url;
+        String domain = cleanUrl.replace("https://", "").replace("http://", "").replace("www.", "");
         int slashIndex = domain.indexOf('/');
         if (slashIndex != -1) domain = domain.substring(0, slashIndex);
         return domain;
@@ -111,7 +113,8 @@ public class RecentSitesAdapter extends RecyclerView.Adapter<RecentSitesAdapter.
 
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
-        String url = filteredRecentSites.get(position);
+        String entry = filteredRecentSites.get(position);
+        String url = entry.contains("|") ? entry.split("\\|")[0] : entry;
         String displayName;
 
         if (filterUniqueDomains) {
